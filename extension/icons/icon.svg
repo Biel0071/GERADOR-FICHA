@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Projeto Ficha">
+  <rect width="128" height="128" rx="26" fill="#0f766e"/>
+  <path d="M38 24h38l18 18v62H38z" fill="#f8fafc"/>
+  <path d="M76 24v20h18z" fill="#cbd5e1"/>
+  <path d="M48 58h34M48 72h34M48 86h22" stroke="#0f766e" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="34" cy="34" r="16" fill="#22c55e"/>
+  <path d="M26 34l6 6 11-13" stroke="#fff" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

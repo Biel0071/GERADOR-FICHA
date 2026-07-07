@@ -1,0 +1,84 @@
+{
+    "manifest_version":  3,
+    "name":  "Projeto Ficha - WhatsApp Web",
+    "description":  "Gera fichas de pedido do WhatsApp Web usando a Material API com token protegido no backend ou o Projeto FICHA no ChatGPT.",
+    "version":  "1.1.0",
+    "minimum_chrome_version":  "114",
+    "permissions":  [
+                        "activeTab",
+                        "clipboardWrite",
+                        "scripting",
+                        "storage",
+                        "tabs",
+                        "unlimitedStorage"
+                    ],
+    "host_permissions":  [
+                             "https://web.whatsapp.com/*",
+                             "https://chatgpt.com/*",
+                             "https://materialdecontrucao.online/*",
+                             "http://127.0.0.1:8000/*",
+                             "http://localhost:8000/*"
+                         ],
+    "background":  {
+                       "service_worker":  "background.js"
+                   },
+    "action":  {
+                   "default_title":  "Projeto Ficha"
+               },
+    "content_scripts":  [
+                            {
+                                "matches":  [
+                                                "https://web.whatsapp.com/*"
+                                            ],
+                                "js":  [
+                                           "utils/constants.js",
+                                           "utils/dom.js",
+                                           "utils/storage.js",
+                                           "utils/logger.js",
+                                           "utils/conversationNormalizer.js",
+                                           "utils/preprocess.js",
+                                           "utils/responseParser.js",
+                                           "utils/prompt.js",
+                                           "utils/settings.js",
+                                           "whatsapp.js",
+                                           "popup.js",
+                                           "inject.js",
+                                           "content.js"
+                                       ],
+                                "css":  [
+                                            "popup.css"
+                                        ],
+                                "run_at":  "document_idle"
+                            },
+                            {
+                                "matches":  [
+                                                "https://chatgpt.com/*"
+                                            ],
+                                "js":  [
+                                           "utils/constants.js",
+                                           "utils/dom.js",
+                                           "utils/storage.js",
+                                           "utils/logger.js",
+                                           "utils/conversationNormalizer.js",
+                                           "utils/preprocess.js",
+                                           "utils/responseParser.js",
+                                           "utils/prompt.js",
+                                           "chatgptAutomationEngine.js",
+                                           "chatgpt.js"
+                                       ],
+                                "run_at":  "document_idle"
+                            }
+                        ],
+    "web_accessible_resources":  [
+                                     {
+                                         "resources":  [
+                                                           "icons/icon.svg",
+                                                           "prompts/ANALISE.txt"
+                                                       ],
+                                         "matches":  [
+                                                         "https://web.whatsapp.com/*",
+                                                         "https://chatgpt.com/*"
+                                                     ]
+                                     }
+                                 ]
+}

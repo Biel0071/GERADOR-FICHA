@@ -1,0 +1,174 @@
+from __future__ import annotations
+
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, ConfigDict, Field
+
+from services.logging_service import append_jsonl
+from services.material_api_service import MaterialApiClient, MaterialApiError
+
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv() -> bool:
+        return False
+
+load_dotenv()
+
+BASE_DIR = Path(__file__).resolve().parent
+LOG_DIR = BASE_DIR / "logs"
+
+app = FastAPI(
+    title="Projeto Ficha Material API Backend",
+    description="Proxy seguro da Material API, health check, logs e diagnosticos da extensao.",
+    version="1.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=(
+        r"chrome-extension://.*|"
+        r"https://web\.whatsapp\.com|"
+        r"https://chatgpt\.com|"
+        r"http://localhost(:\d+)?|"
+        r"http://127\.0\.0\.1(:\d+)?"
+    ),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+
+class EventPayload(BaseModel):
+    type: str = Field(..., min_length=1, max_length=120)
+    level: str = Field(default="info", max_length=20)
+    message: str = Field(default="", max_length=2000)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class GenerateOrderPayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    source: str = Field(default="whatsapp-extension", max_length=80)
+    version: str = Field(default="1.0.0", max_length=40)
+    job_id: str = Field(default="", max_length=160)
+    store_id: str = Field(default="", max_length=160)
+    client: dict[str, Any] = Field(default_factory=dict)
+    prompt: str = Field(default="", max_length=100_000)
+    conversation: dict[str, Any] = Field(default_factory=dict)
+    images: list[dict[str, Any]] = Field(default_factory=list, max_length=20)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+@app.get("/health")
+async def health() -> dict[str, Any]:
+    material_status = MaterialApiClient().public_status()
+    return {
+        "ok": True,
+        "service": "projeto-ficha-backend",
+        "version": app.version,
+        "time": now_iso(),
+        "openai_api": False,
+        "material_api": material_status,
+    }
+
+
+@app.get("/material-api/status")
+async def material_api_status() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "material_api": MaterialApiClient().public_status(),
+        "time": now_iso(),
+    }
+
+
+@app.post("/generate-order")
+async def generate_order(
+    payload: GenerateOrderPayload,
+    request: Request,
+) -> dict[str, Any]:
+    started_at = now_iso()
+    client = MaterialApiClient()
+    try:
+        result = await client.generate(payload.model_dump(exclude_none=True))
+    except MaterialApiError as error:
+        append_jsonl(
+            LOG_DIR,
+            "material-api.log.jsonl",
+            {
+                "received_at": started_at,
+                "client_host": request.client.host if request.client else None,
+                "job_id": payload.job_id,
+                "event": "material_api_failed",
+                "error": str(error),
+                "status_code": error.status_code,
+            },
+        )
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=str(error),
+        ) from error
+
+    append_jsonl(
+        LOG_DIR,
+        "material-api.log.jsonl",
+        {
+            "received_at": started_at,
+            "completed_at": now_iso(),
+            "client_host": request.client.host if request.client else None,
+            "job_id": payload.job_id,
+            "event": "material_api_completed",
+            "upstream_status": result.get("upstream_status"),
+            "has_ficha": bool(result.get("ficha")),
+            "has_download": bool(result.get("download_url")),
+            "image_count": len(payload.images),
+        },
+    )
+    return result
+
+
+@app.post("/logs")
+async def logs(payload: EventPayload, request: Request) -> dict[str, Any]:
+    append_jsonl(
+        LOG_DIR,
+        "extension.log.jsonl",
+        {
+            "received_at": now_iso(),
+            "client_host": request.client.host if request.client else None,
+            **payload.model_dump(),
+        },
+    )
+    return {"ok": True}
+
+
+@app.post("/diagnostics")
+async def diagnostics(payload: EventPayload, request: Request) -> dict[str, Any]:
+    append_jsonl(
+        LOG_DIR,
+        "diagnostics.log.jsonl",
+        {
+            "received_at": now_iso(),
+            "client_host": request.client.host if request.client else None,
+            **payload.model_dump(),
+        },
+    )
+    return {"ok": True}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "main:app",
+        host=os.getenv("BACKEND_HOST", "127.0.0.1"),
+        port=int(os.getenv("BACKEND_PORT", "8000")),
+        reload=True,
+    )
