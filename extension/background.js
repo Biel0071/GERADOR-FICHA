@@ -278,11 +278,21 @@ async function waitForTabComplete(tabId, timeoutMs) {
 }
 
 async function createBackgroundProjectTab(jobId, whatsappTabId) {
-  const created = await tabsCreate({
-    url: C.CHATGPT_PROJECT_URL,
-    active: false,
-    openerTabId: whatsappTabId
-  });
+  let created;
+  try {
+    created = await tabsCreate({
+      url: C.CHATGPT_PROJECT_URL,
+      active: false,
+      autoDiscardable: false,
+      openerTabId: whatsappTabId
+    });
+  } catch (_e) {
+    created = await tabsCreate({
+      url: C.CHATGPT_PROJECT_URL,
+      active: false,
+      openerTabId: whatsappTabId
+    });
+  }
   Logger.debug("aba inativa do Projeto FICHA criada", {
     jobId,
     tabId: created.id,
@@ -989,10 +999,41 @@ async function handleGenerate(message, sender, emitFromPort) {
   const settings = Settings ? await Settings.get() : null;
   const materialApiConfigured = Boolean(Settings && Settings.materialApiReady(settings));
 
-  // Open background tab to the fixed conversation URL (always ChatGPT)
-  await emit(C.JOB_STATUS.OPENING_PROJECT, "Abrindo conversa do Projeto FICHA no ChatGPT...");
-  await createBackgroundProjectTab(jobId, whatsappTabId);
-  await updateActiveJob(jobId, { debug_tab_kept: false });
+  // Reuse existing ChatGPT conversation tab if already open (avoids background-tab throttling).
+  await emit(C.JOB_STATUS.OPENING_PROJECT, "Procurando conversa do Projeto FICHA no ChatGPT...");
+  let reusedTab = false;
+  const existingTabId = await (async () => {
+    try {
+      const tabs = await tabsQuery({ url: "https://chatgpt.com/*" });
+      const match = (tabs || []).find((t) => t.url && (
+        t.url.includes(C.CHATGPT_PROJECT_ID) || t.url.includes(C.CHATGPT_CONVERSATION_ID)
+      ));
+      if (match && match.id) {
+        return match.id;
+      }
+    } catch (err) {
+      Logger.debug("erro ao buscar aba ChatGPT existente", { jobId, error: err.message });
+    }
+    return null;
+  })();
+
+  if (existingTabId) {
+    reusedTab = true;
+    await setChatGPTTabId(jobId, existingTabId, {
+      url: C.CHATGPT_PROJECT_URL,
+      reused: true,
+      created_at: new Date().toISOString()
+    });
+    await Logger.add({
+      status: "tab_reused",
+      message: "Aba existente do ChatGPT reutilizada (sem throttling de aba inativa).",
+      metadata: { jobId, tabId: existingTabId }
+    });
+  } else {
+    // No existing tab — create a background one with autoDiscardable:false to reduce throttling.
+    await createBackgroundProjectTab(jobId, whatsappTabId);
+  }
+  await updateActiveJob(jobId, { debug_tab_kept: false, chatgpt_tab_reused: reusedTab });
 
   const projectTabId = await getChatGPTTabId(jobId);
   if (!projectTabId) {
