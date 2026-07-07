@@ -562,7 +562,9 @@ async function runMaterialApiGeneration(jobId, payload, emit) {
 }
 
 async function runChatGptAutomation(tabId, payload) {
-  await waitForTabComplete(tabId, 60000);
+  // Aba reutilizada já está carregada — timeout curto; nova aba precisa de mais tempo
+  const tabCompleteTimeout = payload.tabReused ? 8000 : 60000;
+  await waitForTabComplete(tabId, tabCompleteTimeout);
   await ensureChatGptContentScript(tabId);
 
   let lastError = null;
@@ -590,7 +592,7 @@ async function runChatGptAutomation(tabId, payload) {
         attempt,
         error: error.message
       });
-      await new Promise((resolve) => setTimeout(resolve, 900 * attempt));
+      await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
       await ensureChatGptContentScript(tabId);
     }
   }
@@ -1062,6 +1064,7 @@ async function handleGenerate(message, sender, emitFromPort) {
       conversation,
       visualContextKey,
       options,
+      tabReused: reusedTab,
       debug: C.DEBUG_CHATGPT_AUTOMATION
     }),
     materialApiConfigured

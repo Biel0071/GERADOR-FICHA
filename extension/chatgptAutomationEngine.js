@@ -616,7 +616,7 @@
     composer.click();
     Dom.setNativeValue(composer, prompt);
     dispatchTextEvents(composer, prompt);
-    await Dom.sleep(700);
+    await Dom.sleep(300);
 
     let currentText = readComposerText(composer);
     if (currentText.length >= Math.min(40, prompt.length)) {
@@ -626,7 +626,7 @@
     automationLog("composer:native-value-incomplete-using-execCommand", { currentLength: currentText.length });
     execInsertText(composer, prompt);
     dispatchTextEvents(composer, prompt);
-    await Dom.sleep(700);
+    await Dom.sleep(300);
     currentText = readComposerText(composer);
     if (currentText.length >= Math.min(40, prompt.length)) {
       return true;
@@ -634,7 +634,7 @@
 
     await pasteFallback(composer, prompt);
     dispatchTextEvents(composer, prompt);
-    await Dom.sleep(700);
+    await Dom.sleep(300);
     currentText = readComposerText(composer);
     return currentText.length >= Math.min(40, prompt.length);
   }
@@ -748,7 +748,7 @@
     const button = findAttachmentButton();
     if (button) {
       Dom.clickElement(button);
-      await Dom.sleep(700);
+      await Dom.sleep(400);
     }
     input = await Dom.waitFor(() => getFileInput(), {
       timeoutMs: 8000,
@@ -787,10 +787,10 @@
     input.files = transfer.files;
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
-    await Dom.sleep(1500);
+    await Dom.sleep(600);
     await Dom.waitForDomStable({
       timeoutMs: 12000,
-      stableMs: 1200
+      stableMs: 600
     });
 
     const result = {
@@ -827,7 +827,7 @@
         promptLength: prompt.length
       });
       Dom.clickElement(button);
-      await Dom.sleep(1600);
+      await Dom.sleep(700);
 
       if (readComposerText(composer).length > prompt.length * 0.8) {
         composer.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter", code: "Enter" }));
@@ -904,7 +904,7 @@
         throw new Error("Streaming ficou sem progresso por tempo excessivo.");
       }
 
-      await Dom.sleep(900);
+      await Dom.sleep(500);
     }
   }
 
