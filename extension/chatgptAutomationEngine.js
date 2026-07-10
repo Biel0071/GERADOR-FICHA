@@ -81,9 +81,11 @@
 
   function isProjectUrl() {
     const href = location.href;
-    return href.startsWith(C.CHATGPT_PROJECT_URL) ||
-      href.includes(C.CHATGPT_PROJECT_ID) ||
-      href.includes(C.CHATGPT_CONVERSATION_ID);
+    // Matches the project page itself AND any conversation created inside the project
+    if (href.includes(C.CHATGPT_PROJECT_ID)) return true;
+    if (C.CHATGPT_CONVERSATION_ID && href.includes(C.CHATGPT_CONVERSATION_ID)) return true;
+    if (href.startsWith(C.CHATGPT_PROJECT_URL)) return true;
+    return false;
   }
 
   function isSearchLike(node) {
