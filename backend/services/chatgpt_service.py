@@ -52,7 +52,9 @@ async def _wait_for(fn, *, timeout_ms: int, interval_ms: int = 600, message: str
     deadline = asyncio.get_event_loop().time() + timeout_ms / 1000
     while True:
         try:
-            result = await fn() if asyncio.iscoroutinefunction(fn) else fn()
+            result = fn()
+            if asyncio.iscoroutine(result):
+                result = await result
         except Exception:
             result = None
         if result:
