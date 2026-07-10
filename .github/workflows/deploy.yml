@@ -1,0 +1,47 @@
+name: Deploy VPS
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "backend/**"
+      - "extension/**"
+      - ".github/workflows/**"
+
+jobs:
+  deploy:
+    name: Deploy para VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
+          timeout: 120s
+          script: |
+            set -e
+            echo "=== Pull do repositório ==="
+            cd /root/gerar-ficha
+            git pull origin main || git pull origin master
+
+            echo "=== Instalando dependências ==="
+            source venv/bin/activate
+            pip install -r backend/requirements.txt -q
+            playwright install chromium --with-deps 2>/dev/null | tail -3
+
+            echo "=== Reiniciando serviços ==="
+            systemctl restart gerar-ficha || true
+            systemctl restart xvfb || true
+
+            echo "=== Status ==="
+            sleep 2
+            systemctl is-active gerar-ficha && echo "Backend: OK" || echo "Backend: FALHOU"
+            curl -sf http://localhost:8000/health | python3 -c "import sys,json; d=json.load(sys.stdin); print('Health:', d.get('ok'))" || echo "Health check falhou"

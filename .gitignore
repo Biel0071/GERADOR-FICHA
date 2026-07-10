@@ -2,7 +2,10 @@ __pycache__/
 *.pyc
 .venv/
 venv/
-backend/logs/*.jsonl
+backend/logs/
 .DS_Store
 Thumbs.db
 backend/.env
+backend/chatgpt_session.json
+*.session.json
+node_modules/

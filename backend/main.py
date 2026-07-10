@@ -11,7 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from services.logging_service import append_jsonl
 from services.material_api_service import MaterialApiClient, MaterialApiError
-from services.chatgpt_service import ChatGPTError, generate_ficha
+from services.chatgpt_service import (
+    ChatGPTError, generate_ficha, start_login, submit_login_code, session_exists
+)
 
 try:
     from dotenv import load_dotenv
@@ -32,13 +34,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=(
-        r"chrome-extension://.*|"
-        r"https://web\.whatsapp\.com|"
-        r"https://chatgpt\.com|"
-        r"http://localhost(:\d+)?|"
-        r"http://127\.0\.0\.1(:\d+)?"
-    ),
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
@@ -75,6 +71,37 @@ class GenerateOrderPayload(BaseModel):
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+@app.get("/login/status")
+async def login_status() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "session_exists": session_exists(),
+        "time": now_iso(),
+    }
+
+
+@app.post("/login/start")
+async def login_start() -> dict[str, Any]:
+    """Inicia login ChatGPT. Se pedir código 2FA, retorna status=waiting_code."""
+    result = await start_login()
+    if result.get("status") == "error":
+        raise HTTPException(status_code=502, detail=result.get("message", "Erro no login."))
+    return result
+
+
+@app.post("/login/verify")
+async def login_verify(request: Request) -> dict[str, Any]:
+    """Envia o código de verificação 2FA para completar o login."""
+    body = await request.json()
+    code = str(body.get("code", "")).strip()
+    if not code:
+        raise HTTPException(status_code=400, detail="Informe o campo 'code' com o código recebido.")
+    result = await submit_login_code(code)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=502, detail=result.get("message", "Código inválido."))
+    return result
 
 
 @app.get("/health")
@@ -216,7 +243,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "main:app",
-        host=os.getenv("BACKEND_HOST", "127.0.0.1"),
+        host=os.getenv("BACKEND_HOST", "0.0.0.0"),
         port=int(os.getenv("BACKEND_PORT", "8000")),
-        reload=True,
+        reload=False,
     )
