@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from services.logging_service import append_jsonl
 from services.material_api_service import MaterialApiClient, MaterialApiError
+from services.chatgpt_service import ChatGPTError, generate_ficha
 
 try:
     from dotenv import load_dotenv
@@ -51,6 +52,14 @@ class EventPayload(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class GenerateFichaPayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    job_id: str = Field(default="", max_length=160)
+    prompt: str = Field(default="", max_length=100_000)
+    conversation: dict[str, Any] = Field(default_factory=dict)
+
+
 class GenerateOrderPayload(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -88,6 +97,45 @@ async def material_api_status() -> dict[str, Any]:
         "material_api": MaterialApiClient().public_status(),
         "time": now_iso(),
     }
+
+
+@app.post("/generate-chatgpt")
+async def generate_chatgpt(
+    payload: GenerateFichaPayload,
+    request: Request,
+) -> dict[str, Any]:
+    started_at = now_iso()
+    try:
+        result = await generate_ficha(
+            prompt=payload.prompt,
+            job_id=payload.job_id,
+        )
+    except ChatGPTError as error:
+        append_jsonl(
+            LOG_DIR,
+            "chatgpt.log.jsonl",
+            {
+                "received_at": started_at,
+                "job_id": payload.job_id,
+                "event": "chatgpt_failed",
+                "error": str(error),
+                "status_code": error.status_code,
+            },
+        )
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+
+    append_jsonl(
+        LOG_DIR,
+        "chatgpt.log.jsonl",
+        {
+            "received_at": started_at,
+            "completed_at": now_iso(),
+            "job_id": payload.job_id,
+            "event": "chatgpt_completed",
+            "answer_length": len(result.get("answer", "")),
+        },
+    )
+    return result
 
 
 @app.post("/generate-order")

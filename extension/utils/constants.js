@@ -142,6 +142,7 @@
     CHATGPT_PROJECT_ID: "6a50feebc29481919b4dcaa0936ec203",
     CHATGPT_CONVERSATION_ID: "",
     BACKEND_URL: "http://127.0.0.1:8000",
+    CHATGPT_BACKEND_URL: "http://127.0.0.1:8000/generate-chatgpt",
     DEFAULT_PROVIDER: "material_api",
     MATERIAL_API_PROXY_URL: "http://127.0.0.1:8000/generate-order",
     MATERIAL_API_DEFAULTS: Object.freeze({

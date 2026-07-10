@@ -525,6 +525,50 @@ async function ensureChatGptContentScript(tabId) {
   ]);
 }
 
+// ChatGPT via backend (Playwright no Chrome do Gabriel) — funciona de qualquer perfil Chrome.
+async function runChatGptViaBackend(payload, emit) {
+  await emit(C.JOB_STATUS.OPENING_PROJECT, "Abrindo FICHA PEDIDO no Chrome do Gabriel via backend...");
+  let response;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), C.CHATGPT_TIMEOUT_MS + 30000);
+    response = await fetch(`${C.BACKEND_URL}/generate-chatgpt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        job_id: payload.jobId || "",
+        prompt: payload.prompt || "",
+        conversation: payload.conversation || {}
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      throw new Error("Tempo esgotado aguardando o backend gerar a ficha ChatGPT.");
+    }
+    throw new Error(`Falha conectando ao backend local: ${error.message}`);
+  }
+
+  const text = await response.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (_) { data = null; }
+
+  if (!response.ok) {
+    const detail = data && data.detail ? data.detail : text;
+    throw new Error(`Backend ChatGPT retornou erro ${response.status}: ${String(detail).slice(0, 300)}`);
+  }
+
+  const answer = data && data.answer ? String(data.answer) : "";
+  if (!answer) {
+    throw new Error("Backend ChatGPT respondeu sem texto de ficha.");
+  }
+  await emit(C.JOB_STATUS.CAPTURING_RESPONSE, `Ficha recebida do ChatGPT (${answer.length} caracteres).`, {
+    answer_length: answer.length
+  });
+  return { ok: true, answer };
+}
+
 // Material API path: no tab automation; the local backend adds the secret token.
 async function runMaterialApiGeneration(jobId, payload, emit) {
   if (!MaterialApiClient) {
@@ -999,19 +1043,7 @@ async function handleGenerate(message, sender, emitFromPort) {
   const settings = Settings ? await Settings.get() : null;
   const materialApiConfigured = Boolean(Settings && Settings.materialApiReady(settings));
 
-  // Sempre abre o projeto FICHA PEDIDO em aba background do Chrome do Gabriel.
-  // Não reutiliza aba existente pois pode estar numa conversa antiga — precisa de chat novo.
-  await emit(C.JOB_STATUS.OPENING_PROJECT, "Abrindo projeto FICHA PEDIDO no ChatGPT...");
-  const reusedTab = false;
-  await createBackgroundProjectTab(jobId, whatsappTabId);
-  await updateActiveJob(jobId, { debug_tab_kept: false, chatgpt_tab_reused: false });
-
-  const projectTabId = await getChatGPTTabId(jobId);
-  if (!projectTabId) {
-    throw new Error("Nao foi possivel recuperar o tabId da conversa do ChatGPT.");
-  }
-  await emit(C.JOB_STATUS.SENDING_PROMPT, "Enviando prompt para a conversa do ChatGPT...", {
-    tabId: projectTabId,
+  await emit(C.JOB_STATUS.SENDING_PROMPT, "Preparando geração da ficha...", {
     prompt_length: prompt.length,
     material_api: materialApiConfigured
   });
@@ -1025,16 +1057,28 @@ async function handleGenerate(message, sender, emitFromPort) {
     });
   };
 
-  // Run ChatGPT + Material API in parallel
-  const [chatGptSettled, materialSettled] = await Promise.allSettled([
-    runChatGptAutomation(projectTabId, {
-      jobId,
-      prompt,
-      conversation,
-      visualContextKey,
-      options,
+  // Função ChatGPT: backend Playwright (funciona de qualquer perfil Chrome).
+  // Fallback: automação de aba direta (só funciona se a extensão estiver no perfil Gabriel).
+  const runChatGpt = async () => {
+    const backendOk = await checkBackendHealth();
+    if (backendOk) {
+      return runChatGptViaBackend({ jobId, prompt, conversation }, emit);
+    }
+    // Fallback: abrir aba no perfil atual
+    await emit(C.JOB_STATUS.OPENING_PROJECT, "Backend offline — abrindo aba direta no ChatGPT...");
+    await createBackgroundProjectTab(jobId, whatsappTabId);
+    await updateActiveJob(jobId, { debug_tab_kept: false });
+    const projectTabId = await getChatGPTTabId(jobId);
+    if (!projectTabId) throw new Error("Nao foi possivel abrir aba do ChatGPT.");
+    return runChatGptAutomation(projectTabId, {
+      jobId, prompt, conversation, visualContextKey, options,
       debug: C.DEBUG_CHATGPT_AUTOMATION
-    }),
+    });
+  };
+
+  // Run ChatGPT + Material API em paralelo
+  const [chatGptSettled, materialSettled] = await Promise.allSettled([
+    runChatGpt(),
     materialApiConfigured
       ? runMaterialApiGeneration(jobId, { prompt, conversation, visualContextKey, settings, options }, materialEmit)
       : Promise.resolve(null)
@@ -1044,15 +1088,18 @@ async function handleGenerate(message, sender, emitFromPort) {
   const materialResult = materialSettled.status === "fulfilled" ? materialSettled.value : null;
   const chatGptError = chatGptSettled.status === "rejected" ? chatGptSettled.reason : null;
 
-  // Cleanup ChatGPT tab
+  // Cleanup ChatGPT tab (só existe no modo fallback de aba direta)
   const chatGptOk = Boolean(chatGptResult && chatGptResult.ok);
-  const keepTab = C.DEBUG_CHATGPT_AUTOMATION || (!chatGptOk && C.DEBUG_KEEP_FAILED_TAB);
-  const cleanupTabId = await cleanupChatGPTTab(jobId, {
-    keepTab,
-    reason: chatGptOk ? "success" : "chatgpt_failed"
-  });
-  if (keepTab) {
-    await emit("debug", "Aba do ChatGPT mantida aberta para debug.", { tabId: cleanupTabId });
+  const fallbackTabId = await getChatGPTTabId(jobId);
+  if (fallbackTabId) {
+    const keepTab = C.DEBUG_CHATGPT_AUTOMATION || (!chatGptOk && C.DEBUG_KEEP_FAILED_TAB);
+    const cleanupTabId = await cleanupChatGPTTab(jobId, {
+      keepTab,
+      reason: chatGptOk ? "success" : "chatgpt_failed"
+    });
+    if (keepTab) {
+      await emit("debug", "Aba do ChatGPT mantida aberta para debug.", { tabId: cleanupTabId });
+    }
   }
 
   // If ChatGPT failed and no material result, throw the ChatGPT error
