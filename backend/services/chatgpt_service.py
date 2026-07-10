@@ -27,8 +27,21 @@ SYSTEM_CHROMIUM = os.getenv(
 
 def _chromium_launch_kwargs() -> dict:
     """Retorna kwargs para pw.chromium.launch(), usando binário do sistema se necessário."""
-    args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-background-timer-throttling"]
-    kwargs: dict = {"headless": HEADLESS, "args": args}
+    args = [
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-background-timer-throttling",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-infobars",
+        "--window-size=1280,720",
+        "--start-maximized",
+        "--disable-web-security",
+        "--allow-running-insecure-content",
+    ]
+    # Na VPS com Xvfb usamos headless=False para passar Cloudflare
+    display = os.getenv("DISPLAY", "")
+    use_headless = HEADLESS and not display
+    kwargs: dict = {"headless": use_headless, "args": args}
     if SYSTEM_CHROMIUM and os.path.exists(SYSTEM_CHROMIUM):
         kwargs["executable_path"] = SYSTEM_CHROMIUM
     return kwargs
@@ -108,19 +121,19 @@ async def start_login() -> dict[str, Any]:
         _login_state.update({"status": "logging_in", "page": page, "browser": browser, "context": context, "pw": pw})
 
         try:
-            await page.goto("https://chatgpt.com/auth/login", wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(2)
+            await page.goto("https://chatgpt.com/auth/login", wait_until="domcontentloaded", timeout=45000)
+            await asyncio.sleep(5)  # aguardar Cloudflare resolver
 
-            # Clicar em "Log in"
+            # Clicar em "Log in" (pode aparecer em alguns fluxos)
             login_btn = await page.query_selector('button:has-text("Log in"), a:has-text("Log in"), [data-testid="login-button"]')
             if login_btn:
                 await login_btn.click()
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)
 
             # Preencher email
             email_input = await _wait_for(
                 lambda: page.query_selector('input[type="email"], input[name="email"], input[autocomplete="email"]'),
-                timeout_ms=15000, message="Campo de email não encontrado."
+                timeout_ms=30000, message="Campo de email não encontrado."
             )
             await email_input.fill(CHATGPT_EMAIL)
             await page.keyboard.press("Enter")
