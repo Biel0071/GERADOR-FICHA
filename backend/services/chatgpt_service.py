@@ -19,6 +19,20 @@ CHATGPT_TIMEOUT_MS = int(os.getenv("CHATGPT_TIMEOUT_MS", "180000"))
 STREAM_STABLE_MS = int(os.getenv("STREAM_STABLE_MS", "1800"))
 HEADLESS = os.getenv("CHATGPT_HEADLESS", "true").lower() == "true"
 
+# Caminho para Chromium do sistema (usado em AlmaLinux/RHEL onde o Playwright não consegue baixar)
+SYSTEM_CHROMIUM = os.getenv(
+    "CHROMIUM_EXECUTABLE",
+    "/usr/bin/chromium-browser" if os.path.exists("/usr/bin/chromium-browser") else ""
+)
+
+def _chromium_launch_kwargs() -> dict:
+    """Retorna kwargs para pw.chromium.launch(), usando binário do sistema se necessário."""
+    args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-background-timer-throttling"]
+    kwargs: dict = {"headless": HEADLESS, "args": args}
+    if SYSTEM_CHROMIUM and os.path.exists(SYSTEM_CHROMIUM):
+        kwargs["executable_path"] = SYSTEM_CHROMIUM
+    return kwargs
+
 # Estado global do login (login interativo via endpoint /login/*)
 _login_state: dict[str, Any] = {"status": "idle", "page": None, "browser": None, "context": None}
 _login_lock = asyncio.Lock()
@@ -85,7 +99,7 @@ async def start_login() -> dict[str, Any]:
             raise ChatGPTError("Playwright não instalado.", status_code=503)
 
         pw = await async_playwright().__aenter__()
-        browser = await pw.chromium.launch(headless=HEADLESS, args=["--no-sandbox", "--disable-dev-shm-usage"])
+        browser = await pw.chromium.launch(**_chromium_launch_kwargs())
         context = await browser.new_context()
         page = await context.new_page()
 
@@ -205,10 +219,7 @@ async def generate_ficha(prompt: str, job_id: str = "") -> dict[str, Any]:
         raise ChatGPTError("Playwright não instalado.", status_code=503)
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(
-            headless=HEADLESS,
-            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-background-timer-throttling"]
-        )
+        browser = await pw.chromium.launch(**_chromium_launch_kwargs())
         context = await browser.new_context()
 
         # Carregar sessão salva
