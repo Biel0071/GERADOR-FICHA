@@ -113,7 +113,7 @@ async def start_login() -> dict[str, Any]:
             login_btn = await page.query_selector('button:has-text("Log in"), a:has-text("Log in"), [data-testid="login-button"]')
             if login_btn:
                 await login_btn.click()
-                await asyncio.sleep(1.5)
+                await asyncio.sleep(2)
 
             # Preencher email
             email_input = await _wait_for(
@@ -122,36 +122,36 @@ async def start_login() -> dict[str, Any]:
             )
             await email_input.fill(CHATGPT_EMAIL)
             await page.keyboard.press("Enter")
-            await asyncio.sleep(1.5)
-
-            # Preencher senha
-            pass_input = await _wait_for(
-                lambda: page.query_selector('input[type="password"]'),
-                timeout_ms=10000, message="Campo de senha não encontrado."
-            )
-            await pass_input.fill(CHATGPT_PASSWORD)
-            await page.keyboard.press("Enter")
             await asyncio.sleep(3)
 
-            # Verificar se pediu código de verificação
+            # Verificar se existe campo de senha (alguns fluxos pedem, outros vão direto para OTP)
+            pass_input = await page.query_selector('input[type="password"]')
+            if pass_input and CHATGPT_PASSWORD:
+                await pass_input.fill(CHATGPT_PASSWORD)
+                await page.keyboard.press("Enter")
+                await asyncio.sleep(3)
+
+            # Verificar se pediu código de verificação / OTP
             page_text = await page.inner_text("body")
             needs_code = any(w in page_text.lower() for w in [
                 "verify", "verificar", "código", "code", "enter the code",
-                "check your email", "confirme", "autenticação"
+                "check your email", "confirme", "autenticação", "otp",
+                "6-digit", "sent you", "enviamos", "check your inbox"
             ])
 
             if needs_code:
                 _login_state["status"] = "waiting_code"
-                return {"status": "waiting_code", "message": "Código de verificação necessário. Informe o código recebido no email/SMS."}
+                return {"status": "waiting_code", "message": "Código OTP necessário. Acesse o email e informe o código via POST /login/verify."}
 
-            # Sem 2FA — verificar se logou
+            # Verificar se já logou
             if "chatgpt.com" in page.url and "auth" not in page.url:
                 await _save_session(context)
                 _login_state["status"] = "idle"
                 return {"status": "ok", "message": "Login concluído com sucesso. Sessão salva."}
 
+            # Assumir que está aguardando código
             _login_state["status"] = "waiting_code"
-            return {"status": "waiting_code", "message": "Aguardando código ou próxima etapa."}
+            return {"status": "waiting_code", "message": "Aguardando código OTP. Acesse o email e envie via POST /login/verify."}
 
         except Exception as e:
             _login_state["status"] = "error"
