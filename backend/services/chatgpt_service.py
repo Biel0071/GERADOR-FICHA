@@ -174,7 +174,7 @@ async def start_login() -> dict[str, Any]:
 
 
 async def submit_login_code(code: str) -> dict[str, Any]:
-    """Envia o código de verificação 2FA durante o login."""
+    """Envia o código de verificação OTP durante o login."""
     global _login_state
     if _login_state["status"] != "waiting_code" or not _login_state.get("page"):
         return {"status": "error", "message": "Nenhum login aguardando código."}
@@ -182,36 +182,66 @@ async def submit_login_code(code: str) -> dict[str, Any]:
     page = _login_state["page"]
     context = _login_state["context"]
     try:
-        # Procurar campo de código OTP
+        # Procurar campo de código OTP (múltiplos seletores)
         code_input = await _wait_for(
-            lambda: page.query_selector('input[type="text"], input[autocomplete="one-time-code"], input[inputmode="numeric"]'),
-            timeout_ms=8000, message="Campo de código não encontrado."
+            lambda: page.query_selector(
+                'input[autocomplete="one-time-code"], input[inputmode="numeric"], '
+                'input[name="code"], input[type="text"][maxlength="6"], '
+                'input[type="tel"], input[type="number"]'
+            ),
+            timeout_ms=10000, message="Campo de código OTP não encontrado."
         )
-        await code_input.fill(code.strip())
-        await page.keyboard.press("Enter")
-        await asyncio.sleep(4)
 
-        # Verificar se logou
-        if "chatgpt.com" in page.url and "auth" not in page.url:
+        await code_input.triple_click()
+        await code_input.fill(code.strip())
+        await asyncio.sleep(0.5)
+
+        # Tentar clicar botão de confirmar, ou Enter
+        confirm_btn = await page.query_selector(
+            'button[type="submit"], button:has-text("Continue"), button:has-text("Continuar"), '
+            'button:has-text("Verify"), button:has-text("Confirmar")'
+        )
+        if confirm_btn and await confirm_btn.is_visible():
+            await confirm_btn.click()
+        else:
+            await page.keyboard.press("Enter")
+
+        # Aguardar redirecionamento (até 15s)
+        for _ in range(15):
+            await asyncio.sleep(1)
+            current_url = page.url
+            if "chatgpt.com" in current_url and "/auth" not in current_url and "login" not in current_url:
+                await _save_session(context)
+                _login_state["status"] = "idle"
+                return {"status": "ok", "message": f"Login concluído. URL: {current_url}. Sessão salva."}
+
+        # Verificação final: navegar direto ao ChatGPT
+        await page.goto("https://chatgpt.com", wait_until="domcontentloaded", timeout=20000)
+        await asyncio.sleep(3)
+        current_url = page.url
+        cookies = await context.cookies()
+        # Se tiver cookies de autenticação (access_token / __Secure-next-auth)
+        auth_cookies = [c for c in cookies if any(k in c.get("name", "") for k in ["access_token", "next-auth", "cf_clearance", "__Host-next"])]
+
+        if auth_cookies or ("chatgpt.com" in current_url and "auth" not in current_url):
             await _save_session(context)
             _login_state["status"] = "idle"
-            return {"status": "ok", "message": "Login com código concluído. Sessão salva."}
+            return {"status": "ok", "message": f"Sessão salva. Cookies auth: {len(auth_cookies)}. URL: {current_url}"}
 
-        # Tentar navegar ao projeto para confirmar
-        await page.goto("https://chatgpt.com", wait_until="domcontentloaded", timeout=15000)
-        await asyncio.sleep(2)
+        # Checar se página não tem "log in" nem "sign up" no conteúdo principal
         page_text = await page.inner_text("body")
-        if "log in" not in page_text.lower():
+        if not any(w in page_text.lower() for w in ["log in", "sign up", "sign in", "entrar"]):
             await _save_session(context)
             _login_state["status"] = "idle"
             return {"status": "ok", "message": "Sessão confirmada e salva."}
 
-        return {"status": "error", "message": "Código aceito mas login não confirmado. Tente novamente."}
+        _login_state["status"] = "waiting_code"
+        return {"status": "error", "message": f"Código não aceito ou expirado. URL atual: {current_url}. Reinicie o login."}
+
     except Exception as e:
         _login_state["status"] = "error"
         return {"status": "error", "message": str(e)}
     finally:
-        # Fechar browser do login após sucesso
         if _login_state["status"] in ("idle", "error"):
             try:
                 await _login_state["browser"].close()
