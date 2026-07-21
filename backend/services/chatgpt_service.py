@@ -351,16 +351,24 @@ async def generate_ficha(prompt: str, job_id: str = "") -> dict[str, Any]:
 
             prev_text = await _get_latest_assistant_text(page)
 
-            # Digitar prompt e enviar
-            await composer.click()
-            await page.keyboard.type(prompt, delay=0)
-            await asyncio.sleep(0.3)
+            # Digitar prompt e enviar (usando fill/eval para evitar travamento com texto longo)
+            try:
+                await composer.fill(prompt)
+            except Exception:
+                await composer.click()
+                await page.evaluate("""([el, text]) => {
+                    el.innerText = text;
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                }""", [composer, prompt])
 
-            send_btn = await page.query_selector('button[data-testid="send-button"], button[aria-label*="Send"], button[aria-label*="Enviar"]')
+            await asyncio.sleep(0.5)
+
+            send_btn = await page.query_selector('button[data-testid="send-button"], button[aria-label*="Send"], button[aria-label*="Enviar"], button[data-testid="fruitjuice-send-button"]')
             if send_btn and await send_btn.is_enabled():
                 await send_btn.click()
             else:
-                await page.keyboard.press("Enter")
+                await composer.press("Enter")
 
             # Aguardar resposta completa
             answer = await _wait_for_response(page, prev_text)

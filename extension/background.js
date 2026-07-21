@@ -251,7 +251,7 @@ async function postBackend(path, payload) {
 
 async function checkBackendHealth() {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 900);
+  const timer = setTimeout(() => controller.abort(), 3500);
   try {
     const response = await fetch(`${C.BACKEND_URL}/health`, {
       method: "GET",
@@ -1057,23 +1057,16 @@ async function handleGenerate(message, sender, emitFromPort) {
     });
   };
 
-  // FunÃ§Ã£o ChatGPT: backend Playwright (funciona de qualquer perfil Chrome).
-  // Fallback: automaÃ§Ã£o de aba direta (sÃ³ funciona se a extensÃ£o estiver no perfil Gabriel).
+  // Função ChatGPT: backend Playwright na VPS (processa 100% no servidor sem abrir abas locais)
   const runChatGpt = async () => {
-    const backendOk = await checkBackendHealth();
-    if (backendOk) {
-      return runChatGptViaBackend({ jobId, prompt, conversation }, emit);
+    try {
+      return await runChatGptViaBackend({ jobId, prompt, conversation }, emit);
+    } catch (err) {
+      if (err && err.message) {
+        throw err;
+      }
+      throw new Error(`Falha no servidor VPS: ${err}`);
     }
-    // Fallback: abrir aba no perfil atual
-    await emit(C.JOB_STATUS.OPENING_PROJECT, "Backend offline â€” abrindo aba direta no ChatGPT...");
-    await createBackgroundProjectTab(jobId, whatsappTabId);
-    await updateActiveJob(jobId, { debug_tab_kept: false });
-    const projectTabId = await getChatGPTTabId(jobId);
-    if (!projectTabId) throw new Error("Nao foi possivel abrir aba do ChatGPT.");
-    return runChatGptAutomation(projectTabId, {
-      jobId, prompt, conversation, visualContextKey, options,
-      debug: C.DEBUG_CHATGPT_AUTOMATION
-    });
   };
 
   // Run ChatGPT + Material API em paralelo
