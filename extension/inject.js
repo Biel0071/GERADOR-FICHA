@@ -419,11 +419,14 @@
           <p class="pfixa-config-note">O token fica protegido em <code>backend/.env</code> e nunca é salvo no Chrome.</p>
         </div>
 
-        <div class="pfixa-panel-main-actions">
-          <button class="pfixa-btn pfixa-btn-primary" type="button" data-pfixa-panel-generate>
-            <span data-pfixa-generate-label>Gerar ficha</span>
+        <div class="pfixa-panel-main-actions" style="display: flex; flex-direction: column; gap: 6px;">
+          <button class="pfixa-btn pfixa-btn-primary" type="button" data-pfixa-panel-generate style="width: 100%; font-weight: 700; padding: 10px 12px; font-size: 13px;">
+            <span data-pfixa-generate-label>📋 Gerar Ficha ChatGPT</span>
           </button>
-          <button class="pfixa-btn pfixa-btn-ghost" type="button" data-pfixa-panel-regenerate>Regerar</button>
+          <button class="pfixa-btn" type="button" data-pfixa-panel-generate-material style="width: 100%; background: #0f766e; color: #ffffff; font-weight: 700; padding: 9px 12px; font-size: 13px; border: none; border-radius: 6px; cursor: pointer;">
+            <span>📊 Gerar Orçamento / DANFE</span>
+          </button>
+          <button class="pfixa-btn pfixa-btn-ghost" type="button" data-pfixa-panel-regenerate style="margin-top: 2px;">Regerar Ficha</button>
         </div>
 
         <div class="pfixa-panel-result-actions is-hidden" data-pfixa-result-actions>
@@ -471,11 +474,31 @@
       panel.querySelector("[data-pfixa-panel-min]").textContent = minimized ? "+" : "−";
     });
 
-    panel.querySelector("[data-pfixa-panel-generate]").addEventListener("click", () => {
-      if (!busy && callbacks.onGenerate) {
-        callbacks.onGenerate();
-      }
-    });
+    const genChatGptBtn = panel.querySelector("[data-pfixa-panel-generate]");
+    if (genChatGptBtn) {
+      genChatGptBtn.addEventListener("click", () => {
+        if (!busy && callbacks.onGenerate) {
+          if (Settings) {
+            Settings.set({ provider: "chatgpt" }).then(() => callbacks.onGenerate());
+          } else {
+            callbacks.onGenerate();
+          }
+        }
+      });
+    }
+
+    const genMaterialBtn = panel.querySelector("[data-pfixa-panel-generate-material]");
+    if (genMaterialBtn) {
+      genMaterialBtn.addEventListener("click", () => {
+        if (!busy && callbacks.onGenerate) {
+          if (Settings) {
+            Settings.set({ provider: "material_api" }).then(() => callbacks.onGenerate());
+          } else {
+            callbacks.onGenerate();
+          }
+        }
+      });
+    }
     panel.querySelector("[data-pfixa-panel-test-chatgpt]").addEventListener("click", () => {
       if (!busy && callbacks.onTestChatGPT) {
         callbacks.onTestChatGPT();

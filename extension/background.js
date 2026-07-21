@@ -1297,6 +1297,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message && message.type === C.MESSAGE_TYPES.MATERIAL_API_STATUS) {
+    fetch(`${C.BACKEND_URL}/material-api/status`)
+      .then((res) => res.json())
+      .then((data) => sendResponse({ ok: true, data }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
   if (!message || message.type !== C.MESSAGE_TYPES.GENERATE) {
     return false;
   }
