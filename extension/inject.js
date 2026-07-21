@@ -604,6 +604,15 @@
     if (bar) {
       bar.style.width = `${progress}%`;
     }
+
+    if (lastStatus === "error" && lastDetail && (lastDetail.includes("401") || lastDetail.includes("expirada"))) {
+      const badge = panel.querySelector("[data-pfixa-vps-session-badge]");
+      const msg = panel.querySelector("[data-pfixa-vps-login-msg]");
+      const startBtn = panel.querySelector("[data-pfixa-vps-login-start]");
+      if (badge) { badge.textContent = "🔴 Sessão Expirada"; badge.dataset.tone = "error"; }
+      if (msg) { msg.textContent = "Sessão do ChatGPT expirou na VPS. Clique em 'Iniciar Login VPS' para renovar."; }
+      if (startBtn && startBtn.parentElement) { startBtn.parentElement.style.display = "flex"; }
+    }
   }
 
   function renderConversation() {

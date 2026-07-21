@@ -63,7 +63,8 @@ def session_exists() -> bool:
     try:
         data = json.loads(SESSION_FILE.read_text(encoding="utf-8"))
         cookies = data.get("cookies", [])
-        return any(any(k in c.get("name", "") for k in ["session", "auth", "token", "cf_clearance", "next-auth"]) for c in cookies)
+        # Exigir obrigatoriamente cookie de autenticação real do ChatGPT (session-token ou access_token)
+        return any("session-token" in c.get("name", "").lower() or "access_token" in c.get("name", "").lower() for c in cookies)
     except Exception:
         return False
 
@@ -348,8 +349,8 @@ async def generate_ficha(prompt: str, job_id: str = "") -> dict[str, Any]:
             await asyncio.sleep(2)
 
             # Verificar se está logado
-            if "auth" in page.url or "login" in page.url:
-                await browser.close()
+            current_url = page.url
+            if "auth" in current_url or "login" in current_url:
                 SESSION_FILE.unlink(missing_ok=True)
                 raise ChatGPTError("Sessão expirada. Refaça o login via /login/start.", status_code=401)
 
@@ -360,14 +361,25 @@ async def generate_ficha(prompt: str, job_id: str = "") -> dict[str, Any]:
                     '[aria-label*="Novo chat"], [aria-label*="new chat"]'
                 )
                 if new_chat:
-                    await new_chat.click()
-                    await asyncio.sleep(1.5)
+                    try:
+                        await new_chat.click()
+                        await asyncio.sleep(1.5)
+                    except Exception:
+                        pass
 
             # Aguardar compositor
-            composer = await _wait_for(
-                lambda: page.query_selector('#prompt-textarea, div[contenteditable="true"], textarea'),
-                timeout_ms=30000, message="Compositor do ChatGPT não apareceu."
-            )
+            try:
+                composer = await _wait_for(
+                    lambda: page.query_selector('#prompt-textarea, div[contenteditable="true"], textarea'),
+                    timeout_ms=15000, message="Compositor do ChatGPT não apareceu."
+                )
+            except ChatGPTError:
+                # Se o compositor não apareceu, verificar se caiu na tela de login
+                login_btn = await page.query_selector('button:has-text("Log in"), a:has-text("Log in"), a[href*="login"]')
+                if login_btn or "auth" in page.url or "login" in page.url:
+                    SESSION_FILE.unlink(missing_ok=True)
+                    raise ChatGPTError("Sessão expirada. Refaça o login via /login/start.", status_code=401)
+                raise
 
             prev_text = await _get_latest_assistant_text(page)
 
