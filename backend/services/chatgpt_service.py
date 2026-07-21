@@ -97,17 +97,30 @@ async def _load_session(context) -> bool:
 
 # ─── Login interativo (chamado pelos endpoints /login/*) ────────────────────
 
-async def start_login() -> dict[str, Any]:
-    """Inicia o processo de login no ChatGPT. Retorna status."""
+async def start_login(email: str = "") -> dict[str, Any]:
+    """Inicia o processo de login no ChatGPT com e-mail fornecido ou configurado. Retorna status."""
     global _login_state
+    target_email = email.strip() or CHATGPT_EMAIL.strip() or os.getenv("CHATGPT_EMAIL", "").strip()
+    if not target_email:
+        return {"status": "error", "message": "Informe o e-mail para realizar o login no ChatGPT."}
+
     async with _login_lock:
-        if _login_state["status"] in ("waiting_code", "logging_in"):
-            return {"status": _login_state["status"], "message": "Login já em andamento."}
+        # Se houver browser ativo que fechou ou desconectou, fazemos a limpeza
+        if _login_state.get("browser"):
+            try:
+                if _login_state.get("page") and _login_state["page"].is_closed():
+                    await _login_state["browser"].close()
+                    _login_state.update({"status": "idle", "page": None, "browser": None, "context": None})
+            except Exception:
+                _login_state.update({"status": "idle", "page": None, "browser": None, "context": None})
+
+        if _login_state["status"] == "waiting_code" and _login_state.get("page") and not _login_state["page"].is_closed():
+            return {"status": "waiting_code", "message": "Aguardando código OTP. Digite os 6 dígitos."}
 
         try:
             from playwright.async_api import async_playwright
         except ImportError:
-            raise ChatGPTError("Playwright não instalado.", status_code=503)
+            raise ChatGPTError("Playwright não instalado no servidor.", status_code=503)
 
         pw = await async_playwright().__aenter__()
         browser = await pw.chromium.launch(**_chromium_launch_kwargs())
@@ -118,55 +131,67 @@ async def start_login() -> dict[str, Any]:
 
         try:
             await page.goto("https://chatgpt.com/auth/login", wait_until="domcontentloaded", timeout=45000)
-            await asyncio.sleep(5)  # aguardar Cloudflare resolver
+            await asyncio.sleep(4)
 
-            # Clicar em "Log in" (pode aparecer em alguns fluxos)
-            login_btn = await page.query_selector('button:has-text("Log in"), a:has-text("Log in"), [data-testid="login-button"]')
-            if login_btn:
+            # Clicar em "Log in" se a landing page tiver o botão
+            login_btn = await page.query_selector('button:has-text("Log in"), a:has-text("Log in"), [data-testid="login-button"], a[href*="login"]')
+            if login_btn and await login_btn.is_visible():
                 await login_btn.click()
                 await asyncio.sleep(3)
 
-            # Preencher email
+            # Preencher e-mail com múltiplos seletores
             email_input = await _wait_for(
-                lambda: page.query_selector('input[type="email"], input[name="email"], input[autocomplete="email"]'),
-                timeout_ms=30000, message="Campo de email não encontrado."
+                lambda: page.query_selector(
+                    'input[type="email"], input[name="email"], input[autocomplete="email"], '
+                    'input[autocomplete="username"], input[id*="email"], input[placeholder*="email"]'
+                ),
+                timeout_ms=25000, message="Campo de e-mail do ChatGPT não encontrado."
             )
-            await email_input.fill(CHATGPT_EMAIL)
-            await page.keyboard.press("Enter")
-            await asyncio.sleep(3)
+            await email_input.fill(target_email)
+            await asyncio.sleep(0.5)
 
-            # Verificar se existe campo de senha (alguns fluxos pedem, outros vão direto para OTP)
+            continue_btn = await page.query_selector('button[type="submit"], button:has-text("Continue"), button:has-text("Continuar")')
+            if continue_btn and await continue_btn.is_visible():
+                await continue_btn.click()
+            else:
+                await page.keyboard.press("Enter")
+            await asyncio.sleep(4)
+
+            # Preencher senha se o campo for solicitado
             pass_input = await page.query_selector('input[type="password"]')
-            if pass_input and CHATGPT_PASSWORD:
+            if pass_input and await pass_input.is_visible() and CHATGPT_PASSWORD:
                 await pass_input.fill(CHATGPT_PASSWORD)
                 await page.keyboard.press("Enter")
-                await asyncio.sleep(3)
+                await asyncio.sleep(4)
 
-            # Verificar se pediu código de verificação / OTP
+            # Verificar se já caiu no prompt do código OTP
             page_text = await page.inner_text("body")
             needs_code = any(w in page_text.lower() for w in [
                 "verify", "verificar", "código", "code", "enter the code",
                 "check your email", "confirme", "autenticação", "otp",
-                "6-digit", "sent you", "enviamos", "check your inbox"
+                "6-digit", "sent you", "enviamos", "check your inbox", "sign in with a temporary code"
             ])
 
-            if needs_code:
+            if needs_code or "auth" in page.url:
                 _login_state["status"] = "waiting_code"
-                return {"status": "waiting_code", "message": "Código OTP necessário. Acesse o email e informe o código via POST /login/verify."}
+                return {"status": "waiting_code", "message": f"Código OTP enviado para {target_email}! Verifique a caixa de entrada."}
 
-            # Verificar se já logou
             if "chatgpt.com" in page.url and "auth" not in page.url:
                 await _save_session(context)
                 _login_state["status"] = "idle"
                 return {"status": "ok", "message": "Login concluído com sucesso. Sessão salva."}
 
-            # Assumir que está aguardando código
             _login_state["status"] = "waiting_code"
-            return {"status": "waiting_code", "message": "Aguardando código OTP. Acesse o email e envie via POST /login/verify."}
+            return {"status": "waiting_code", "message": f"Aguardando código OTP enviado para {target_email}."}
 
         except Exception as e:
             _login_state["status"] = "error"
-            return {"status": "error", "message": str(e)}
+            try:
+                await browser.close()
+            except Exception:
+                pass
+            _login_state.update({"page": None, "browser": None, "context": None})
+            return {"status": "error", "message": f"Erro abrindo login no ChatGPT: {e}"}
 
 
 async def submit_login_code(code: str) -> dict[str, Any]:

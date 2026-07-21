@@ -210,11 +210,23 @@
       } catch (_) {}
     }
 
+    const vpsEmailInput = panel.querySelector("[data-pfixa-vps-email-input]");
+
     if (vpsStartBtn) {
       vpsStartBtn.addEventListener("click", () => {
+        const email = vpsEmailInput ? vpsEmailInput.value.trim() : "";
         if (vpsMsg) vpsMsg.textContent = "Iniciando Playwright na VPS...";
         if (vpsStartBtn) vpsStartBtn.disabled = true;
-        chrome.runtime.sendMessage({ type: C.MESSAGE_TYPES.VPS_LOGIN_START }, (response) => {
+
+        const timer = setTimeout(() => {
+          if (vpsStartBtn) vpsStartBtn.disabled = false;
+          if (vpsMsg && vpsMsg.textContent.includes("Iniciando")) {
+            vpsMsg.textContent = "⏱️ O servidor demorou a responder. Verifique seu e-mail ou clique para tentar novamente.";
+          }
+        }, 35000);
+
+        chrome.runtime.sendMessage({ type: C.MESSAGE_TYPES.VPS_LOGIN_START, email }, (response) => {
+          clearTimeout(timer);
           if (vpsStartBtn) vpsStartBtn.disabled = false;
           if (chrome.runtime.lastError || !response || !response.ok) {
             const err = (response && response.error) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || "Erro de conexão";
@@ -225,12 +237,12 @@
           if (data.status === "waiting_code") {
             if (vpsOtpContainer) vpsOtpContainer.style.display = "flex";
             if (vpsBadge) { vpsBadge.textContent = "🟡 Aguardando OTP"; vpsBadge.dataset.tone = "warning"; }
-            if (vpsMsg) vpsMsg.textContent = "Código enviado para o e-mail! Digite o código OTP abaixo:";
+            if (vpsMsg) vpsMsg.textContent = data.message || "Código enviado para o e-mail! Digite o código OTP abaixo:";
           } else if (data.status === "ok") {
             if (vpsOtpContainer) vpsOtpContainer.style.display = "none";
             checkVpsSessionStatus();
           } else {
-            if (vpsMsg) vpsMsg.textContent = `Status VPS: ${data.message || "desconhecido"}`;
+            if (vpsMsg) vpsMsg.textContent = `⚠️ ${data.message || "Erro no login VPS"}`;
           }
         });
       });
@@ -388,8 +400,9 @@
               <span class="pfixa-config-label"><strong>Sessão VPS Playwright</strong></span>
               <span class="pfixa-config-badge" data-pfixa-vps-session-badge>verificando...</span>
             </div>
-            <div style="display: flex; gap: 4px; margin-top: 4px;">
-              <button type="button" class="pfixa-btn pfixa-btn-sm" data-pfixa-vps-login-start style="flex:1;">🤖 Iniciar Login VPS</button>
+            <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 4px;">
+              <input type="email" data-pfixa-vps-email-input placeholder="E-mail da conta ChatGPT" value="luukasgmct2033@hotmail.com" style="padding: 5px 8px; background: #ffffff !important; color: #111827 !important; border: 1px solid #9ca3af; border-radius: 4px; font-size: 12px; font-weight: 600;" />
+              <button type="button" class="pfixa-btn pfixa-btn-sm" data-pfixa-vps-login-start style="width: 100%; font-weight: 700;">🤖 Iniciar Login VPS</button>
             </div>
             <div class="pfixa-vps-otp-row" data-pfixa-vps-otp-container style="display: none; margin-top: 6px; gap: 4px; flex-wrap: wrap;">
               <input type="text" data-pfixa-vps-otp-input placeholder="Código OTP (6 dígitos)" style="flex:1; min-width: 120px; padding: 6px 8px; background: #ffffff !important; color: #111827 !important; border: 1px solid #9ca3af; border-radius: 4px; font-size: 13px; font-weight: 700; text-align: center;" />

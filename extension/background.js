@@ -1270,7 +1270,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message && message.type === C.MESSAGE_TYPES.VPS_LOGIN_START) {
-    fetch(`${C.BACKEND_URL}/login/start`, { method: "POST" })
+    fetch(`${C.BACKEND_URL}/login/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: message.email || "" })
+    })
       .then((res) => res.json())
       .then((data) => sendResponse({ ok: true, data }))
       .catch((err) => sendResponse({ ok: false, error: err.message }));

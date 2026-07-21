@@ -95,9 +95,16 @@ async def login_status() -> dict[str, Any]:
 
 
 @app.post("/login/start")
-async def login_start() -> dict[str, Any]:
+async def login_start(request: Request) -> dict[str, Any]:
     """Inicia login ChatGPT. Se pedir código 2FA, retorna status=waiting_code."""
-    result = await start_login()
+    email = ""
+    try:
+        body = await request.json()
+        if isinstance(body, dict):
+            email = str(body.get("email", "")).strip()
+    except Exception:
+        pass
+    result = await start_login(email=email)
     if result.get("status") == "error":
         raise HTTPException(status_code=502, detail=result.get("message", "Erro no login."))
     return result
