@@ -234,6 +234,8 @@
       });
     }
 
+    const vpsOtpResend = panel.querySelector("[data-pfixa-vps-otp-resend]");
+
     if (vpsOtpSubmit) {
       vpsOtpSubmit.addEventListener("click", () => {
         const code = vpsOtpInput ? vpsOtpInput.value.trim() : "";
@@ -258,6 +260,23 @@
           } else {
             if (vpsMsg) vpsMsg.textContent = `Erro ao verificar OTP: ${data.message || "Código inválido"}`;
           }
+        });
+      });
+    }
+
+    if (vpsOtpResend) {
+      vpsOtpResend.addEventListener("click", () => {
+        if (vpsMsg) vpsMsg.textContent = "Solicitando novo código para o e-mail na VPS...";
+        if (vpsOtpResend) vpsOtpResend.disabled = true;
+        chrome.runtime.sendMessage({ type: C.MESSAGE_TYPES.VPS_LOGIN_RESEND }, (response) => {
+          if (vpsOtpResend) vpsOtpResend.disabled = false;
+          if (chrome.runtime.lastError || !response || !response.ok) {
+            const err = (response && response.error) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || "Erro";
+            if (vpsMsg) vpsMsg.textContent = `Erro reenviando código: ${err}`;
+            return;
+          }
+          const data = response.data || {};
+          if (vpsMsg) vpsMsg.textContent = data.message || "Novo código enviado! Verifique sua caixa de entrada.";
         });
       });
     }
@@ -369,9 +388,10 @@
             <div style="display: flex; gap: 4px; margin-top: 4px;">
               <button type="button" class="pfixa-btn pfixa-btn-sm" data-pfixa-vps-login-start style="flex:1;">🤖 Iniciar Login VPS</button>
             </div>
-            <div class="pfixa-vps-otp-row" data-pfixa-vps-otp-container style="display: none; margin-top: 6px; gap: 4px;">
-              <input type="text" data-pfixa-vps-otp-input placeholder="Código OTP (6 dígitos)" style="flex:1; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px;" />
+            <div class="pfixa-vps-otp-row" data-pfixa-vps-otp-container style="display: none; margin-top: 6px; gap: 4px; flex-wrap: wrap;">
+              <input type="text" data-pfixa-vps-otp-input placeholder="Código OTP (6 dígitos)" style="flex:1; min-width: 120px; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px;" />
               <button type="button" class="pfixa-btn pfixa-btn-sm pfixa-btn-primary" data-pfixa-vps-otp-submit>Confirmar OTP</button>
+              <button type="button" class="pfixa-btn pfixa-btn-sm" data-pfixa-vps-otp-resend title="Solicitar novo código OTP para o e-mail">🔁 Reenviar Código</button>
             </div>
             <small class="pfixa-config-status" data-pfixa-vps-login-msg style="display: block; margin-top: 4px; font-size: 11px;"></small>
           </div>

@@ -252,6 +252,38 @@ async def submit_login_code(code: str) -> dict[str, Any]:
                 pass
 
 
+async def resend_login_code() -> dict[str, Any]:
+    """Clica no botão 'Reenviar código' da página do ChatGPT se existente, ou reinicia o processo de login."""
+    global _login_state
+    if _login_state.get("page"):
+        try:
+            page = _login_state["page"]
+            resend_btn = await page.query_selector(
+                'button:has-text("Resend"), button:has-text("Reenviar"), '
+                'a:has-text("Resend"), a:has-text("Reenviar"), '
+                'button:has-text("Resend code"), button:has-text("Reenviar código")'
+            )
+            if resend_btn and await resend_btn.is_visible():
+                await resend_btn.click()
+                await asyncio.sleep(2)
+                _login_state["status"] = "waiting_code"
+                return {"status": "waiting_code", "message": "Novo código de verificação solicitado via ChatGPT."}
+        except Exception:
+            pass
+
+    # Se a página fechou ou o botão não apareceu, limpa e força novo start_login()
+    _login_state["status"] = "idle"
+    if _login_state.get("browser"):
+        try:
+            await _login_state["browser"].close()
+        except Exception:
+            pass
+        _login_state["browser"] = None
+        _login_state["page"] = None
+
+    return await start_login()
+
+
 async def refresh_keep_alive() -> bool:
     """Abre o ChatGPT com a sessão salva a cada 12h para renovar os cookies e manter a conta ativa."""
     if not session_exists():

@@ -13,7 +13,7 @@ from services.logging_service import append_jsonl
 from services.material_api_service import MaterialApiClient, MaterialApiError
 import asyncio
 from services.chatgpt_service import (
-    ChatGPTError, generate_ficha, start_login, submit_login_code, session_exists, refresh_keep_alive
+    ChatGPTError, generate_ficha, start_login, submit_login_code, session_exists, refresh_keep_alive, resend_login_code
 )
 
 try:
@@ -113,6 +113,15 @@ async def login_verify(request: Request) -> dict[str, Any]:
     result = await submit_login_code(code)
     if result.get("status") == "error":
         raise HTTPException(status_code=502, detail=result.get("message", "Código inválido."))
+    return result
+
+
+@app.post("/login/resend")
+async def login_resend() -> dict[str, Any]:
+    """Reenvia ou solicita um novo código OTP no ChatGPT."""
+    result = await resend_login_code()
+    if result.get("status") == "error":
+        raise HTTPException(status_code=502, detail=result.get("message", "Erro reenviando código."))
     return result
 
 
