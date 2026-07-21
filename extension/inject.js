@@ -271,6 +271,10 @@
             <span class="pfixa-config-label">Conversa ativa</span>
             <a class="pfixa-config-link" href="${C && C.CHATGPT_PROJECT_URL ? C.CHATGPT_PROJECT_URL : "https://chatgpt.com"}" target="_blank" rel="noopener noreferrer" title="Abrir conversa do Projeto FICHA">Ficha de Pedido ↗</a>
           </div>
+          <div class="pfixa-config-row" style="margin-top: 4px;">
+            <span class="pfixa-config-label">Status Login</span>
+            <a class="pfixa-config-link" href="https://chatgpt.com" target="_blank" rel="noopener noreferrer" title="Abrir ChatGPT para Fazer Login ou Digitar OTP">🔑 Entrar / Digitar OTP ↗</a>
+          </div>
           <p class="pfixa-config-note">Sempre envia para a conversa configurada do Gabriel. A ficha formatada fica disponível para copiar e colar.</p>
         </div>
 
@@ -281,7 +285,7 @@
           </div>
           <label class="pfixa-config-field">
             <span>Endpoint do backend</span>
-            <input type="url" data-pfixa-material-endpoint placeholder="http://127.0.0.1:8000/generate-order" />
+            <input type="url" data-pfixa-material-endpoint placeholder="http://209.50.241.22:8000/generate-order" />
           </label>
           <label class="pfixa-config-field">
             <span>ID da loja <em>(opcional)</em></span>

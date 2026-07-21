@@ -144,9 +144,9 @@
     BACKEND_URL: "http://209.50.241.22:8000",
     CHATGPT_BACKEND_URL: "http://209.50.241.22:8000/generate-chatgpt",
     DEFAULT_PROVIDER: "material_api",
-    MATERIAL_API_PROXY_URL: "http://127.0.0.1:8000/generate-order",
+    MATERIAL_API_PROXY_URL: "http://209.50.241.22:8000/generate-order",
     MATERIAL_API_DEFAULTS: Object.freeze({
-      endpoint: "http://127.0.0.1:8000/generate-order",
+      endpoint: "http://209.50.241.22:8000/generate-order",
       storeId: "",
       timeoutMs: 120000
     }),

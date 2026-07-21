@@ -17,14 +17,34 @@ Importante: no modo ChatGPT este projeto nao usa OpenAI API, nao pede `OPENAI_AP
 O provedor padrao agora e `Material API (site/ERP)`. O fluxo fica assim:
 
 1. A extensao captura e limpa a conversa, screenshots e imagens.
-2. A extensao envia o payload somente para `http://127.0.0.1:8000/generate-order`.
-3. O backend le `MATERIAL_API_TOKEN` de `backend/.env`.
-4. O backend adiciona `Authorization: Bearer <token>` e encaminha a requisicao ao endpoint HTTPS configurado em `MATERIAL_API_URL`.
+2. A extensao envia o payload para a VPS configurada, por padrao `http://209.50.241.22:8000/generate-order`.
+3. O backend da VPS le `MATERIAL_API_TOKEN` de `backend/.env`.
+4. O backend envia `x-api-key: <token>` ao endpoint HTTPS configurado em `MATERIAL_API_URL` e depois consulta `MATERIAL_API_PDF_URL` para obter o PDF/DANFE.
 5. A resposta volta para o modal, clipboard e composer do WhatsApp.
 
 O token nunca e salvo em `chrome.storage.local`, nunca aparece no painel e nunca e enviado diretamente pelo content script. O seletor ainda oferece `ChatGPT (conta logada)` como fallback.
 
 Importante: `https://materialdecontrucao.online/` e a pagina publica da loja, nao um endpoint de geracao. O projeto Supabase identificado no site nao possui atualmente uma funcao publica `gerar-ficha`; portanto, configure em `MATERIAL_API_URL` a URL HTTPS real que recebera o POST. A Edge Function de referencia continua em `lovable/supabase/functions/gerar-ficha/index.ts`.
+
+## Estado atual para VPS
+
+A extensao ja esta preparada para chamar a VPS `http://209.50.241.22:8000`:
+
+- `BACKEND_URL` aponta para `http://209.50.241.22:8000`.
+- `MATERIAL_API_PROXY_URL` aponta para `http://209.50.241.22:8000/generate-order`.
+- O `manifest.json` permite `http://209.50.241.22:8000/*`.
+- O backend expoe `/generate-chatgpt` para gerar a ficha via ChatGPT na VPS.
+- O backend expoe `/generate-order` para criar orcamento/DANFE no Material API usando `MATERIAL_API_TOKEN`.
+
+Para validar a VPS:
+
+```bash
+curl http://209.50.241.22:8000/health
+curl http://209.50.241.22:8000/login/status
+curl http://209.50.241.22:8000/material-api/status
+```
+
+Se a extensao ja tiver salvo o endpoint antigo `127.0.0.1`, ela migra automaticamente esse valor para a VPS quando carregar as configuracoes.
 
 ## Estrutura
 
@@ -98,7 +118,7 @@ Botoes:
 
 ## Backend da Material API
 
-No modo `Material API`, o backend e obrigatorio porque protege o token e funciona como proxy para o site/ERP. Ele nao chama OpenAI API.
+No modo `Material API`, o backend/VPS e obrigatorio porque protege o token e funciona como proxy para o site/ERP. Ele nao chama OpenAI API.
 
 ```powershell
 cd backend
@@ -119,9 +139,9 @@ Invoke-RestMethod http://127.0.0.1:8000/material-api/status
 O status informa apenas se endpoint e token estao configurados; o segredo nunca e retornado.
 
 ```dotenv
-MATERIAL_API_URL=https://seu-endpoint-https/gerar-ficha
+MATERIAL_API_URL=https://flkionbmkuqgkudjjuqk.supabase.co/functions/v1/api-quotation
+MATERIAL_API_PDF_URL=https://flkionbmkuqgkudjjuqk.supabase.co/functions/v1/api-quotation-pdf
 MATERIAL_API_TOKEN=seu-token-secreto
-MATERIAL_API_KEY=chave-apikey-quando-o-provedor-exigir
 MATERIAL_STORE_ID=id-da-loja
 ```
 

@@ -8,7 +8,7 @@ echo "=== [1/5] Copiando arquivos do backend ==="
 echo "=== [2/5] Ativando venv e instalando deps ==="
 cd /root/gerar-ficha
 source venv/bin/activate
-pip install fastapi uvicorn httpx python-dotenv pydantic playwright -q
+pip install -r backend/requirements.txt -q
 playwright install chromium
 
 echo "=== [3/5] Configurando Xvfb (display virtual) ==="

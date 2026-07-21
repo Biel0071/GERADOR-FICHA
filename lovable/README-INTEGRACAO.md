@@ -1,106 +1,101 @@
-# Material API: integracao segura com o projeto Lovable/Supabase
+# Integracao Material API / VPS
 
-A extensao envia conversa, prompt e imagens para o backend local. O backend adiciona o token secreto e encaminha a requisicao ao endpoint configurado do projeto `materialdecontrucao.online`.
-
-## Fluxo
+A extensao nao guarda token no Chrome. O fluxo correto e:
 
 ```text
 WhatsApp Web
-  -> extensao Chrome (sem token)
-  -> POST http://127.0.0.1:8000/generate-order
-  -> backend Python adiciona Authorization/apikey
-  -> MATERIAL_API_URL
-  -> ficha + URL de download
+  -> extensao Chrome
+  -> POST http://209.50.241.22:8000/generate-order
+  -> backend Python na VPS
+  -> POST MATERIAL_API_URL com header x-api-key
+  -> GET MATERIAL_API_PDF_URL?id=<orcamento_id>
+  -> retorna download_url para a extensao
 ```
 
-O token nunca deve ser salvo em `chrome.storage.local` nem no `manifest.json`.
+## Variaveis do backend
 
-## Configuracao
-
-Crie `backend/.env` a partir de `.env.example`:
+Configure em `/root/gerar-ficha/backend/.env` na VPS:
 
 ```dotenv
-MATERIAL_API_URL=https://seu-endpoint-https/gerar-ficha
+BACKEND_HOST=0.0.0.0
+BACKEND_PORT=8000
+
+MATERIAL_API_URL=https://flkionbmkuqgkudjjuqk.supabase.co/functions/v1/api-quotation
+MATERIAL_API_PDF_URL=https://flkionbmkuqgkudjjuqk.supabase.co/functions/v1/api-quotation-pdf
 MATERIAL_API_TOKEN=seu-token-secreto
-MATERIAL_API_KEY=chave-apikey-quando-o-provedor-exigir
-MATERIAL_STORE_ID=id-da-loja
+MATERIAL_STORE_ID=
 MATERIAL_API_TIMEOUT_SECONDS=120
 MATERIAL_ALLOWED_HOSTS=materialdecontrucao.online,flkionbmkuqgkudjjuqk.supabase.co
 ```
 
-- `MATERIAL_API_TOKEN`: enviado apenas pelo backend como `Authorization: Bearer ...`.
-- `MATERIAL_API_KEY`: enviado como header `apikey`. Quando vazio, o backend usa o token.
-- `MATERIAL_ALLOWED_HOSTS`: allowlist contra envio acidental do token para outro dominio.
+`MATERIAL_API_TOKEN` e enviado pelo backend como `x-api-key`. Ele nunca deve ser salvo na extensao.
 
-## Estado atual do site
+## Contrato esperado do endpoint
 
-O dominio `https://materialdecontrucao.online/` e a interface publica da loja. O site usa o projeto Supabase `flkionbmkuqgkudjjuqk.supabase.co`.
+### Criar orcamento
 
-Na verificacao de 26/06/2026, `functions/v1/gerar-ficha` retornava `404`. Portanto, e necessario:
+`POST MATERIAL_API_URL`
 
-1. Implantar `supabase/functions/gerar-ficha/index.ts` no projeto correto; ou
-2. Informar em `MATERIAL_API_URL` outro endpoint HTTPS compativel.
+Headers:
 
-## Contrato encaminhado pelo backend
+```http
+x-api-key: <MATERIAL_API_TOKEN>
+Content-Type: application/json
+Accept: application/json
+```
 
-### Requisicao
+Body principal recebido da extensao:
 
 ```json
 {
   "source": "whatsapp-extension",
-  "version": "1.1.0",
-  "job_id": "ficha-...",
-  "store_id": "loja-123",
+  "job_id": "job-123",
+  "store_id": "loja-1",
   "client": {
-    "name": "Cliente",
+    "name": "Joao",
     "phone": "31999999999"
   },
-  "prompt": "analise comercial",
+  "prompt": "contexto comercial compactado",
   "conversation": {
-    "client_name": "Cliente",
+    "client_name": "Joao",
     "phone": "31999999999",
-    "message_count": 42,
-    "messages": [],
-    "preprocessing": {}
+    "messages": []
   },
-  "images": [
-    {
-      "kind": "screenshot",
-      "name": "screenshot-1.jpg",
-      "dataUrl": "data:image/jpeg;base64,..."
-    }
-  ],
-  "metrics": {}
+  "images": []
 }
 ```
 
-Headers enviados ao endpoint remoto:
-
-```text
-Authorization: Bearer <MATERIAL_API_TOKEN>
-apikey: <MATERIAL_API_KEY, quando configurada>
-X-Store-Id: <store_id>
-Content-Type: application/json
-```
-
-### Resposta recomendada
+Resposta minima esperada:
 
 ```json
 {
   "ok": true,
-  "ficha": "texto da ficha/orcamento",
-  "download_url": "https://.../orcamento.pdf",
-  "download_id": "orcamentos/loja-123/ficha.pdf"
+  "id": "orcamento-123"
 }
 ```
 
-O proxy tambem aceita aliases como `answer`, `content`, `text`, `result`, `orcamento`, `quotation`, `pdf_url` e `document_id`.
+Tambem sao aceitos aliases como `download_id`, `quotation_id`, `orcamento_id` ou `document_id`.
 
-## Diagnostico
+### Buscar PDF/DANFE
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
-Invoke-RestMethod http://127.0.0.1:8000/material-api/status
+`GET MATERIAL_API_PDF_URL?id=<orcamento_id>`
+
+Resposta minima esperada:
+
+```json
+{
+  "ok": true,
+  "pdf_url": "https://materialdecontrucao.online/orcamentos/orcamento-123.pdf"
+}
 ```
 
-Os endpoints de diagnostico informam apenas se o token esta configurado. O valor secreto nunca e retornado.
+Tambem sao aceitos aliases como `download_url`, `downloadUrl`, `file_url`, `danfe_url` ou `url`.
+
+## Validacao rapida
+
+```bash
+curl http://209.50.241.22:8000/health
+curl http://209.50.241.22:8000/material-api/status
+```
+
+Se `configured` vier `false`, falta configurar `MATERIAL_API_URL` ou `MATERIAL_API_TOKEN` no `.env` da VPS.

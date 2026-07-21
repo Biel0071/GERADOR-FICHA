@@ -64,76 +64,71 @@ assert(fallbackPrompt.includes("FICHA DE PEDIDO"), "prompt ERP fallback nao tem 
 assert(fallbackPrompt.length < 2600, `prompt ERP grande demais: ${fallbackPrompt.length}`);
 
 const commercialPrompt = ProjetoFichaPrompt.buildFichaPrompt(normalized);
-assert(commercialPrompt.includes("👤 Cliente"), "prompt principal nao usa ANALISE.txt comercial");
-assert(commercialPrompt.includes("📦 Produtos"), "prompt principal sem bloco Produtos comercial");
-assert(commercialPrompt.includes("CONTEXTO VISUAL"), "prompt principal sem contexto visual");
-assert(commercialPrompt.includes("Confiança do Preço"), "prompt principal sem confianca de preco");
-assert(commercialPrompt.includes("Não use o formato simples"), "prompt principal nao bloqueia formato simples");
+assert(commercialPrompt.includes("👤 Dados do Cliente"), "prompt principal nao usa Dados do Cliente");
+assert(commercialPrompt.includes("📍 Entrega"), "prompt principal sem bloco Entrega");
+assert(commercialPrompt.includes("📦 Itens"), "prompt principal sem bloco Itens");
+assert(commercialPrompt.includes("💰 Valor dos Produtos"), "prompt principal sem valor dos produtos");
+assert(commercialPrompt.includes("🚚 Frete"), "prompt principal sem frete");
+assert(commercialPrompt.includes("💳 Forma de Pagamento"), "prompt principal sem pagamento");
+assert(commercialPrompt.includes("Nunca explique o processo"), "prompt principal sem regra de resposta seca");
 
 const parsed = ProjetoFichaResponseParser.parseResponse(`
-👤 Cliente
-Joao
+👤 Dados do Cliente
 
-🪪 CPF
-123.456.789-10
+Nome: Joao
+CPF: 123.456.789-10
+Telefone: 31999999999
+E-mail:
 
-📞 Telefone
-31999999999
+📍 Entrega
 
-📅 Data da Entrega
-CONFIRMAR
+Endereço: Rua A 123
+Bairro: Centro
+Cidade: Belo Horizonte
+Estado: MG
+CEP: A confirmar
+Referência:
 
-🚚 Endereço
-Rua A 123
+📦 Itens
 
-📍 Referência
-CONFIRMAR
+• Cimento CPII × 10
 
-📧 E-mail
-CONFIRMAR
+💰 Valor dos Produtos: R$300,00
 
-📦 Produtos
-- 10x Cimento CPII
+🚚 Frete: R$35,75
 
-💰 Valores
-CONFIRMAR
+💵 Total do Pedido: R$335,75
 
-📊 Confiança do Preço
-MÉDIA
+⏱️ Prazo de Entrega: 2 a 3 dias úteis
 
-💵 Total Geral
-CONFIRMAR
+💳 Forma de Pagamento
 
-💳 Condições de Pagamento
-PIX
+• PIX/À vista: R$320,75
+• Cartão: 10x sem juros de R$33,58
 
-⏱️ Prazo
-Retirada
-
-⚠️ Pendências
-- Confirmar cidade
-
-✅ Score de Confiança
-80% Faltando e-mail
+📝 Observações
+• CEP não informado pelo cliente.
 `);
 
-assert(parsed.cliente === "Joao", "parser cliente falhou");
+assert(parsed.nome === "Joao", "parser nome falhou");
+assert(parsed.cpf === "123.456.789-10", "parser cpf falhou");
+assert(parsed.telefone === "31999999999", "parser telefone falhou");
 assert(parsed.itens.length === 1, "parser itens falhou");
-assert(parsed.pendencias.length === 1, "parser pendencias falhou");
-assert(parsed.data_entrega === "CONFIRMAR", "parser data entrega falhou");
-assert(parsed.pagamento === "PIX", "parser pagamento comercial falhou");
-assert(parsed.confianca_preco === "MÉDIA", "parser confianca preco falhou");
-assert(parsed.score_confianca.includes("80%"), "parser score confianca falhou");
+assert(parsed.frete === "R$35,75", "parser frete falhou");
+assert(parsed.total_pedido === "R$335,75", "parser total falhou");
+assert(parsed.pix === "R$320,75", "parser pix falhou");
+assert(parsed.cartao.includes("10x"), "parser cartao falhou");
+assert(parsed.observacoes.length === 1, "parser observacoes falhou");
 
 const formatted = ProjetoFichaResponseParser.formatCommercialFicha(parsed, conversation);
-assert(formatted.includes("👤 Cliente"), "formatter sem Cliente comercial");
-assert(formatted.includes("💳 Condições de Pagamento"), "formatter sem pagamento comercial");
-assert(formatted.includes("📊 Confiança do Preço"), "formatter sem confianca de preco");
-assert(formatted.includes("✅ Score de Confiança"), "formatter sem score de confianca");
+assert(formatted.includes("👤 Dados do Cliente"), "formatter sem Dados do Cliente");
+assert(formatted.includes("📍 Entrega"), "formatter sem Entrega");
+assert(formatted.includes("📦 Itens"), "formatter sem Itens");
+assert(formatted.includes("💳 Forma de Pagamento"), "formatter sem pagamento");
+assert(formatted.includes("CEP: A confirmar"), "formatter sem CEP a confirmar");
 assert(!formatted.includes("Cliente:"), "formatter nao deve usar formato simples Cliente:");
 const validation = ProjetoFichaResponseParser.validateCommercialFicha(parsed, conversation);
 assert(validation.ok, `validacao comercial falhou: ${validation.missing.join(",")}`);
-
 const engineSource = fs.readFileSync(path.join(root, "extension/chatgptAutomationEngine.js"), "utf8");
 [
   "waitForProjectReady",

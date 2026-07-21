@@ -11,13 +11,23 @@
     return {
       provider: (C && C.DEFAULT_PROVIDER) || "material_api",
       materialApi: {
-        endpoint: material.endpoint || (C && C.MATERIAL_API_PROXY_URL) || "http://127.0.0.1:8000/generate-order",
+        endpoint: material.endpoint || (C && C.MATERIAL_API_PROXY_URL) || "http://209.50.241.22:8000/generate-order",
         storeId: material.storeId || "",
         timeoutMs: material.timeoutMs || 120000
       }
     };
   }
 
+  function normalizeEndpoint(value, fallback) {
+    const endpoint = typeof value === "string" ? value.trim() : "";
+    if (!endpoint) {
+      return fallback;
+    }
+    if (/^https?:\/\/(127\.0\.0\.1|localhost):8000\/generate-order\/?$/i.test(endpoint)) {
+      return fallback;
+    }
+    return endpoint;
+  }
   function merge(stored) {
     const base = defaults();
     if (!stored || typeof stored !== "object") {
@@ -35,9 +45,7 @@
     return {
       provider: requestedProvider,
       materialApi: {
-        endpoint: typeof material.endpoint === "string" && material.endpoint.trim()
-          ? material.endpoint.trim()
-          : base.materialApi.endpoint,
+        endpoint: normalizeEndpoint(material.endpoint, base.materialApi.endpoint),
         storeId: typeof material.storeId === "string" ? material.storeId.trim() : base.materialApi.storeId,
         timeoutMs: Number.isFinite(material.timeoutMs) && material.timeoutMs > 0
           ? material.timeoutMs

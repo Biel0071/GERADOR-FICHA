@@ -745,7 +745,7 @@
           options: {
             regenerate: true,
             validationRetry: true,
-            revisionInstruction: `A resposta anterior nao passou na validacao comercial. Gere novamente usando obrigatoriamente os blocos com emojis e preenchendo CLIENTE, TELEFONE e PRODUTO quando houver dados na conversa. Campos ausentes devem ficar como CONFIRMAR. Problemas detectados: ${prepared.validation.missing.join(", ")}.`
+            revisionInstruction: `A resposta anterior nao passou na validacao comercial. Gere novamente obrigatoriamente no padrao: 👤 Dados do Cliente, 📍 Entrega, 📦 Itens, 💰 Valor dos Produtos, 🚚 Frete, 💵 Total do Pedido, ⏱️ Prazo de Entrega, 💳 Forma de Pagamento e 📝 Observações. Campos de cliente ausentes ficam em branco; CEP ausente fica como A confirmar. Problemas detectados: ${prepared.validation.missing.join(", ")}.`
           }
         });
         if (!response || !response.ok) {

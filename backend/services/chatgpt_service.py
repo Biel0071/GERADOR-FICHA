@@ -192,7 +192,10 @@ async def submit_login_code(code: str) -> dict[str, Any]:
             timeout_ms=10000, message="Campo de código OTP não encontrado."
         )
 
-        await code_input.triple_click()
+        try:
+            await code_input.click(click_count=3)
+        except Exception:
+            await code_input.click()
         await code_input.fill(code.strip())
         await asyncio.sleep(0.5)
 

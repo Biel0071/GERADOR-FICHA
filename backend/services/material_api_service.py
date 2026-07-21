@@ -97,19 +97,25 @@ def endpoint_host(endpoint: str) -> str:
     return (urlparse(endpoint).hostname or "").lower()
 
 
-def validate_endpoint(settings: MaterialApiSettings) -> None:
-    parsed = urlparse(settings.endpoint)
+def validate_api_url(url: str, allowed_hosts: tuple[str, ...], label: str) -> None:
+    parsed = urlparse(url)
     if parsed.scheme != "https":
         raise MaterialApiError(
-            "MATERIAL_API_URL deve usar HTTPS.",
+            f"{label} deve usar HTTPS.",
             status_code=503,
         )
-    host = endpoint_host(settings.endpoint)
-    if not host or host not in settings.allowed_hosts:
+    host = endpoint_host(url)
+    if not host or host not in allowed_hosts:
         raise MaterialApiError(
-            f"Host da API nao permitido: {host or 'ausente'}.",
+            f"Host da API nao permitido em {label}: {host or 'ausente'}.",
             status_code=503,
         )
+
+
+def validate_endpoint(settings: MaterialApiSettings) -> None:
+    validate_api_url(settings.endpoint, settings.allowed_hosts, "MATERIAL_API_URL")
+    if settings.pdf_endpoint:
+        validate_api_url(settings.pdf_endpoint, settings.allowed_hosts, "MATERIAL_API_PDF_URL")
 
 
 def first_string(payload: dict[str, Any], fields: tuple[str, ...]) -> str:

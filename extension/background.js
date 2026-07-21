@@ -525,7 +525,7 @@ async function ensureChatGptContentScript(tabId) {
   ]);
 }
 
-// ChatGPT via backend (Playwright no Chrome do Gabriel) — funciona de qualquer perfil Chrome.
+// ChatGPT via backend (Playwright no Chrome do Gabriel) â€” funciona de qualquer perfil Chrome.
 async function runChatGptViaBackend(payload, emit) {
   await emit(C.JOB_STATUS.OPENING_PROJECT, "Abrindo FICHA PEDIDO no Chrome do Gabriel via backend...");
   let response;
@@ -1001,7 +1001,7 @@ async function handleGenerate(message, sender, emitFromPort) {
     metadata: {
       jobId,
       prompt_length: prompt.length,
-      prompt_source: prompt.includes("Formato obrigatório da resposta") ? "ANALISE.txt" : "ERP_FALLBACK"
+      prompt_source: prompt.includes("GERADOR DE FICHAS DE PEDIDOS") ? "ANALISE.txt" : "ERP_FALLBACK"
     }
   });
   if (visualContextKey || conversation.visual_context) {
@@ -1043,12 +1043,12 @@ async function handleGenerate(message, sender, emitFromPort) {
   const settings = Settings ? await Settings.get() : null;
   const materialApiConfigured = Boolean(Settings && Settings.materialApiReady(settings));
 
-  await emit(C.JOB_STATUS.SENDING_PROMPT, "Preparando geração da ficha...", {
+  await emit(C.JOB_STATUS.SENDING_PROMPT, "Preparando geraÃ§Ã£o da ficha...", {
     prompt_length: prompt.length,
     material_api: materialApiConfigured
   });
 
-  // Silent emitter for Material API — logs but does not override main status bar
+  // Silent emitter for Material API â€” logs but does not override main status bar
   const materialEmit = async (status, detail, extra) => {
     await Logger.add({
       status,
@@ -1057,15 +1057,15 @@ async function handleGenerate(message, sender, emitFromPort) {
     });
   };
 
-  // Função ChatGPT: backend Playwright (funciona de qualquer perfil Chrome).
-  // Fallback: automação de aba direta (só funciona se a extensão estiver no perfil Gabriel).
+  // FunÃ§Ã£o ChatGPT: backend Playwright (funciona de qualquer perfil Chrome).
+  // Fallback: automaÃ§Ã£o de aba direta (sÃ³ funciona se a extensÃ£o estiver no perfil Gabriel).
   const runChatGpt = async () => {
     const backendOk = await checkBackendHealth();
     if (backendOk) {
       return runChatGptViaBackend({ jobId, prompt, conversation }, emit);
     }
     // Fallback: abrir aba no perfil atual
-    await emit(C.JOB_STATUS.OPENING_PROJECT, "Backend offline — abrindo aba direta no ChatGPT...");
+    await emit(C.JOB_STATUS.OPENING_PROJECT, "Backend offline â€” abrindo aba direta no ChatGPT...");
     await createBackgroundProjectTab(jobId, whatsappTabId);
     await updateActiveJob(jobId, { debug_tab_kept: false });
     const projectTabId = await getChatGPTTabId(jobId);
@@ -1088,7 +1088,7 @@ async function handleGenerate(message, sender, emitFromPort) {
   const materialResult = materialSettled.status === "fulfilled" ? materialSettled.value : null;
   const chatGptError = chatGptSettled.status === "rejected" ? chatGptSettled.reason : null;
 
-  // Cleanup ChatGPT tab (só existe no modo fallback de aba direta)
+  // Cleanup ChatGPT tab (sÃ³ existe no modo fallback de aba direta)
   const chatGptOk = Boolean(chatGptResult && chatGptResult.ok);
   const fallbackTabId = await getChatGPTTabId(jobId);
   if (fallbackTabId) {

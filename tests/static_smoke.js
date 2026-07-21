@@ -63,6 +63,7 @@ assert(manifest.permissions.includes("tabs"), "Permissao tabs ausente.");
 assert(manifest.host_permissions.includes("https://web.whatsapp.com/*"), "Host WhatsApp ausente.");
 assert(manifest.host_permissions.includes("https://chatgpt.com/*"), "Host ChatGPT ausente.");
 assert(manifest.host_permissions.includes("https://materialdecontrucao.online/*"), "Host Material API ausente.");
+assert(manifest.host_permissions.includes("http://209.50.241.22:8000/*"), "Host VPS ausente.");
 assert(!manifest.host_permissions.includes("https://*/*"), "Permissao HTTPS ampla nao deve ser usada.");
 assert(manifest.content_scripts.length >= 2, "Content scripts de WhatsApp e ChatGPT devem existir.");
 

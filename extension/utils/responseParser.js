@@ -7,29 +7,26 @@
     normalizeText: (value) => String(value || "").trim()
   };
 
-  const FIELD_DEFINITIONS = [
-    { key: "cliente", heading: "👤 Cliente", aliases: ["Cliente"] },
-    { key: "cpf", heading: "🪪 CPF", aliases: ["CPF", "CNPJ"] },
-    { key: "telefone", heading: "📞 Telefone", aliases: ["Telefone", "Contato"] },
-    { key: "data_entrega", heading: "📅 Data da Entrega", aliases: ["Data da Entrega", "Data de Entrega", "Data entrega"] },
-    { key: "endereco", heading: "🚚 Endereço", aliases: ["Endereço", "Endereco", "EndereÃ§o"] },
-    { key: "referencia", heading: "📍 Referência", aliases: ["Referência", "Referencia", "ReferÃªncia", "Ponto de referência", "Ponto de referencia"] },
-    { key: "email", heading: "📧 E-mail", aliases: ["E-mail", "Email"] },
-    { key: "itens", heading: "📦 Produtos", aliases: ["Produtos", "Produto", "Itens", "Item"] },
-    { key: "valores", heading: "💰 Valores", aliases: ["Valores", "Valor", "Frete"] },
-    { key: "confianca_preco", heading: "📊 Confiança do Preço", aliases: ["Confiança do Preço", "Confianca do Preco", "CONFIANÇA DO PREÇO", "Confianca Preco"] },
-    { key: "total", heading: "💵 Total Geral", aliases: ["Total Geral", "Total", "Valor total"] },
-    { key: "pagamento", heading: "💳 Condições de Pagamento", aliases: ["Condições de Pagamento", "Condicoes de Pagamento", "CondiÃ§Ãµes de Pagamento", "Pagamento"] },
-    { key: "prazo", heading: "⏱️ Prazo", aliases: ["Prazo", "Entrega"] },
-    { key: "pendencias", heading: "⚠️ Pendências", aliases: ["Pendências", "Pendencias", "PendÃªncias", "Confirmar", "Informações faltantes", "Informacoes faltantes"] },
-    { key: "score_confianca", heading: "✅ Score de Confiança", aliases: ["Score de Confiança", "Score de Confianca", "SCORE DE CONFIANÇA", "Score"] },
-    { key: "resumo", heading: "Resumo", aliases: ["Resumo", "Resumo operacional"] }
-  ];
-
-  const FIELD_BY_KEY = FIELD_DEFINITIONS.reduce((acc, item) => {
-    acc[item.key] = item;
-    return acc;
-  }, {});
+  const EMPTY_STRUCT = Object.freeze({
+    nome: "",
+    cpf: "",
+    telefone: "",
+    email: "",
+    endereco: "",
+    bairro: "",
+    cidade: "",
+    estado: "",
+    cep: "",
+    referencia: "",
+    itens: [],
+    valor_produtos: "",
+    frete: "",
+    total_pedido: "",
+    prazo_entrega: "",
+    pix: "",
+    cartao: "",
+    observacoes: []
+  });
 
   function stripDecorations(text) {
     return String(text || "")
@@ -38,7 +35,7 @@
       .trim();
   }
 
-  function normalizeHeading(value) {
+  function normalize(value) {
     return Dom.normalizeText(String(value || "")
       .replace(/^[^\p{L}\p{N}]+/u, "")
       .replace(/[:：]\s*$/, "")
@@ -47,247 +44,249 @@
       .toLowerCase());
   }
 
-  function aliasesFor(definition) {
-    return [definition.heading, ...(definition.aliases || [])].map(normalizeHeading);
+  function cleanValue(value) {
+    return Dom.normalizeText(String(value || "").replace(/^[-*•]\s*/, ""));
   }
 
-  function detectHeading(line) {
-    const clean = Dom.normalizeText(String(line || "").replace(/^[-*•]\s*/, ""));
-    if (!clean) {
-      return null;
-    }
+  function isBlank(value) {
+    const clean = cleanValue(value);
+    return !clean || /^confirmar$/i.test(clean) || /^a confirmar$/i.test(clean);
+  }
 
-    for (const definition of FIELD_DEFINITIONS) {
-      const aliases = aliasesFor(definition);
-      for (const alias of aliases) {
-        const normalized = normalizeHeading(clean);
-        if (normalized === alias) {
-          return { key: definition.key, value: "" };
-        }
-        if (normalized.startsWith(`${alias}:`)) {
-          return { key: definition.key, value: Dom.normalizeText(clean.slice(clean.indexOf(":") + 1)) };
-        }
-        const plainAlias = alias.replace(/[^\p{L}\p{N}\s]/gu, "").trim();
-        if (plainAlias && normalized.startsWith(`${plainAlias}:`)) {
-          return { key: definition.key, value: Dom.normalizeText(clean.slice(clean.indexOf(":") + 1)) };
-        }
+  function sectionName(line) {
+    const n = normalize(line);
+    if (/dados do cliente|cliente$/.test(n)) return "cliente";
+    if (/entrega|endereco/.test(n) && !/prazo/.test(n)) return "entrega";
+    if (/itens|produtos|produto/.test(n)) return "itens";
+    if (/forma de pagamento|condicoes de pagamento|pagamento/.test(n)) return "pagamento";
+    if (/observacoes|pendencias|informacoes faltantes/.test(n)) return "observacoes";
+    return "";
+  }
+
+  const FIELD_ALIASES = [
+    ["nome", ["nome", "cliente"]],
+    ["cpf", ["cpf", "cnpj"]],
+    ["telefone", ["telefone", "contato", "celular"]],
+    ["email", ["e-mail", "email"]],
+    ["endereco", ["endereco", "rua", "logradouro"]],
+    ["bairro", ["bairro"]],
+    ["cidade", ["cidade"]],
+    ["estado", ["estado", "uf"]],
+    ["cep", ["cep"]],
+    ["referencia", ["referencia", "ponto de referencia"]],
+    ["valor_produtos", ["valor dos produtos", "valores", "valor"]],
+    ["frete", ["frete"]],
+    ["total_pedido", ["total do pedido", "total geral", "total"]],
+    ["prazo_entrega", ["prazo de entrega", "prazo"]],
+    ["pix", ["pix/a vista", "pix / a vista", "pix", "a vista", "à vista"]],
+    ["cartao", ["cartao", "cartão"]]
+  ];
+
+  function parseKeyValue(line) {
+    const match = String(line || "").match(/^\s*(?:[-*•]\s*)?([^:：]{2,80})[:：]\s*(.*)$/);
+    if (!match) return null;
+    const key = normalize(match[1]);
+    const value = cleanValue(match[2]);
+    for (const [field, aliases] of FIELD_ALIASES) {
+      if (aliases.some((alias) => key === normalize(alias))) {
+        return { field, value };
       }
     }
-
     return null;
-  }
-
-  function extractSections(text) {
-    const sections = {};
-    let currentKey = "";
-
-    for (const rawLine of stripDecorations(text).split("\n")) {
-      const line = Dom.normalizeText(rawLine);
-      const heading = detectHeading(line);
-      if (heading) {
-        currentKey = heading.key;
-        sections[currentKey] = sections[currentKey] || [];
-        if (heading.value) {
-          sections[currentKey].push(heading.value);
-        }
-        continue;
-      }
-
-      if (currentKey && line) {
-        sections[currentKey].push(line);
-      }
-    }
-
-    return sections;
-  }
-
-  function sectionValue(sections, key) {
-    return Dom.normalizeText((sections[key] || [])
-      .map((line) => line.replace(/^[-*•]\s*/, ""))
-      .join("\n"));
-  }
-
-  function parseList(value) {
-    return String(value || "")
-      .split("\n")
-      .map((line) => Dom.normalizeText(line.replace(/^[-*•]\s*/, "")))
-      .filter(Boolean);
-  }
-
-  function fallbackConfirmLines(answer) {
-    return answer
-      .split("\n")
-      .map((line) => Dom.normalizeText(line))
-      .filter((line) => /CONFIRMAR/i.test(line));
   }
 
   function parseResponse(text) {
     const answer = stripDecorations(text);
-    const sections = extractSections(answer);
     const parsed = {
-      cliente: sectionValue(sections, "cliente") || "CONFIRMAR",
-      telefone: sectionValue(sections, "telefone") || "CONFIRMAR",
-      cpf: sectionValue(sections, "cpf") || "CONFIRMAR",
-      data_entrega: sectionValue(sections, "data_entrega") || "CONFIRMAR",
-      endereco: sectionValue(sections, "endereco") || "CONFIRMAR",
-      referencia: sectionValue(sections, "referencia") || "CONFIRMAR",
-      email: sectionValue(sections, "email") || "CONFIRMAR",
-      itens: parseList(sectionValue(sections, "itens")),
-      valores: sectionValue(sections, "valores") || "CONFIRMAR",
-      confianca_preco: sectionValue(sections, "confianca_preco") || "CONFIRMAR",
-      total: sectionValue(sections, "total") || "CONFIRMAR",
-      frete: sectionValue(sections, "valores") || "CONFIRMAR",
-      pagamento: sectionValue(sections, "pagamento") || "CONFIRMAR",
-      prazo: sectionValue(sections, "prazo") || "CONFIRMAR",
-      entrega: sectionValue(sections, "data_entrega") || sectionValue(sections, "prazo") || "CONFIRMAR",
-      pendencias: parseList(sectionValue(sections, "pendencias")),
-      score_confianca: sectionValue(sections, "score_confianca") || "",
-      resumo: sectionValue(sections, "resumo") || "",
+      ...EMPTY_STRUCT,
+      itens: [],
+      observacoes: [],
       raw_text: answer,
-      sections
+      sections: {}
     };
 
-    if (!parsed.pendencias.length) {
-      parsed.pendencias = fallbackConfirmLines(answer);
+    let section = "";
+    for (const rawLine of answer.split("\n")) {
+      const line = Dom.normalizeText(rawLine);
+      if (!line) continue;
+
+      const nextSection = sectionName(line);
+      if (nextSection && !parseKeyValue(line)) {
+        section = nextSection;
+        parsed.sections[section] = parsed.sections[section] || [];
+        continue;
+      }
+
+      const pair = parseKeyValue(line);
+      if (pair) {
+        if (pair.field === "pix" || pair.field === "cartao") {
+          parsed[pair.field] = pair.value;
+        } else if (pair.value || !(pair.field in parsed)) {
+          parsed[pair.field] = pair.value;
+        }
+        continue;
+      }
+
+      if (section === "itens") {
+        const item = cleanValue(line);
+        if (item && !/^produto\s*[×x]\s*quantidade$/i.test(item)) {
+          parsed.itens.push(item);
+        }
+        continue;
+      }
+
+      if (section === "pagamento") {
+        const payment = cleanValue(line);
+        if (/pix|vista/i.test(payment) && !parsed.pix) parsed.pix = payment.replace(/^pix\s*\/\s*à?\s*vista\s*:?\s*/i, "");
+        else if (/cart[aã]o|\d+x/i.test(payment) && !parsed.cartao) parsed.cartao = payment.replace(/^cart[aã]o\s*:?\s*/i, "");
+        continue;
+      }
+
+      if (section === "observacoes") {
+        parsed.observacoes.push(cleanValue(line));
+      }
     }
+
+    // Backward compatibility with the previous commercial pattern.
+    if (!parsed.nome) parsed.nome = valueAfterOldHeading(answer, ["👤 Cliente", "Cliente"]);
+    if (!parsed.cpf) parsed.cpf = valueAfterOldHeading(answer, ["🪪 CPF", "CPF"]);
+    if (!parsed.telefone) parsed.telefone = valueAfterOldHeading(answer, ["📞 Telefone", "Telefone"]);
+    if (!parsed.email) parsed.email = valueAfterOldHeading(answer, ["📧 E-mail", "E-mail", "Email"]);
+    if (!parsed.endereco) parsed.endereco = valueAfterOldHeading(answer, ["🚚 Endereço", "Endereço", "Endereco"]);
+    if (!parsed.referencia) parsed.referencia = valueAfterOldHeading(answer, ["📍 Referência", "Referência", "Referencia"]);
+    if (!parsed.prazo_entrega) parsed.prazo_entrega = valueAfterOldHeading(answer, ["⏱️ Prazo", "Prazo"]);
+    if (!parsed.total_pedido) parsed.total_pedido = valueAfterOldHeading(answer, ["💵 Total Geral", "Total Geral", "Total"]);
+    if (!parsed.itens.length) parsed.itens = listAfterOldHeading(answer, ["📦 Produtos", "Produtos", "Itens"]);
+
+    // Legacy keys kept for existing UI code.
+    parsed.cliente = parsed.nome;
+    parsed.data_entrega = parsed.prazo_entrega;
+    parsed.email = parsed.email;
+    parsed.valores = parsed.valor_produtos;
+    parsed.total = parsed.total_pedido;
+    parsed.pagamento = [parsed.pix ? `PIX/À vista: ${parsed.pix}` : "", parsed.cartao ? `Cartão: ${parsed.cartao}` : ""].filter(Boolean).join("\n");
+    parsed.prazo = parsed.prazo_entrega;
+    parsed.entrega = parsed.endereco;
+    parsed.pendencias = parsed.observacoes;
+    parsed.score_confianca = "";
+    parsed.resumo = "";
 
     return parsed;
   }
 
-  function isConfirm(value) {
-    return !Dom.normalizeText(value) || /^CONFIRMAR$/i.test(Dom.normalizeText(value));
+  function valueAfterOldHeading(answer, headings) {
+    const lines = stripDecorations(answer).split("\n");
+    const aliases = headings.map(normalize);
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = Dom.normalizeText(lines[i]);
+      const pair = parseKeyValue(line);
+      if (pair && aliases.includes(normalize(line.split(/[:：]/)[0]))) {
+        return pair.value;
+      }
+      if (aliases.includes(normalize(line))) {
+        for (let j = i + 1; j < lines.length; j += 1) {
+          const value = cleanValue(lines[j]);
+          if (value) return value;
+        }
+      }
+    }
+    return "";
   }
 
-  function ensurePendencias(parsed) {
-    const pendencias = [...(parsed.pendencias || [])].filter(Boolean);
-    [
-      ["cpf", "Confirmar CPF"],
-      ["data_entrega", "Confirmar data da entrega"],
-      ["endereco", "Confirmar endereço"],
-      ["referencia", "Confirmar referência"],
-      ["email", "Confirmar e-mail"],
-      ["valores", "Confirmar valores"],
-      ["total", "Confirmar total geral"],
-      ["pagamento", "Confirmar condições de pagamento"],
-      ["prazo", "Confirmar prazo"]
-    ].forEach(([key, label]) => {
-      if (isConfirm(parsed[key]) && !pendencias.some((item) => item.toLowerCase() === label.toLowerCase())) {
-        pendencias.push(label);
+  function listAfterOldHeading(answer, headings) {
+    const lines = stripDecorations(answer).split("\n");
+    const aliases = headings.map(normalize);
+    const items = [];
+    let active = false;
+    for (const raw of lines) {
+      const line = Dom.normalizeText(raw);
+      if (!line) continue;
+      if (aliases.includes(normalize(line))) {
+        active = true;
+        continue;
       }
-    });
-    return pendencias.length ? pendencias : ["CONFIRMAR"];
+      if (active && sectionName(line)) break;
+      if (active) items.push(cleanValue(line));
+    }
+    return items.filter(Boolean);
+  }
+
+  function valueOrBlank(value) {
+    return isBlank(value) ? "" : cleanValue(value);
+  }
+
+  function cepValue(parsed) {
+    return isBlank(parsed.cep) ? "A confirmar" : cleanValue(parsed.cep);
   }
 
   function listBlock(items) {
-    const values = (items || []).filter(Boolean);
-    if (!values.length) {
-      return "- CONFIRMAR";
-    }
-    return values.map((item) => `- ${item.replace(/^[-*•]\s*/, "")}`).join("\n");
+    const values = (items || []).map(cleanValue).filter(Boolean);
+    if (!values.length) return "";
+    return values.map((item) => `• ${item.replace(/^•\s*/, "")}`).join("\n");
   }
 
-  function joinHumanList(items) {
-    const values = (items || []).filter(Boolean);
-    if (!values.length) {
-      return "";
+  function ensureObservacoes(parsed) {
+    const notes = (parsed.observacoes || []).map(cleanValue).filter(Boolean);
+    if (isBlank(parsed.cep) && !notes.some((item) => /cep/i.test(item))) {
+      notes.push("CEP não informado pelo cliente.");
     }
-    if (values.length === 1) {
-      return values[0];
-    }
-    return `${values.slice(0, -1).join(", ")} e ${values[values.length - 1]}`;
-  }
-
-  function estimateScore(parsed, client, phone) {
-    const checks = [
-      ["cliente", client],
-      ["telefone", phone],
-      ["cpf", parsed.cpf],
-      ["endereco", parsed.endereco],
-      ["email", parsed.email],
-      ["data de entrega", parsed.data_entrega],
-      ["produto", (parsed.itens || []).some((item) => item && !/^CONFIRMAR$/i.test(item)) ? "ok" : ""],
-      ["pagamento", parsed.pagamento],
-      ["total", parsed.total]
-    ];
-    const missing = checks
-      .filter(([, value]) => isConfirm(value))
-      .map(([label]) => label);
-    const score = Math.max(0, Math.round(((checks.length - missing.length) / checks.length) * 100));
-    return `${score}% ${missing.length ? `Faltando ${joinHumanList(missing)}` : "Dados completos"}`;
+    return notes;
   }
 
   function formatCommercialFicha(parsedInput, conversation) {
     const parsed = parsedInput && parsedInput.raw_text ? parsedInput : parseResponse(parsedInput || "");
-    const client = !isConfirm(parsed.cliente)
-      ? parsed.cliente
-      : conversation && conversation.client_name ? conversation.client_name : "CONFIRMAR";
-    const phone = !isConfirm(parsed.telefone)
-      ? parsed.telefone
-      : conversation && conversation.phone ? conversation.phone : "CONFIRMAR";
-    const pendencias = ensurePendencias({ ...parsed, cliente: client, telefone: phone });
+    const nome = valueOrBlank(parsed.nome || parsed.cliente) || (conversation && conversation.client_name ? conversation.client_name : "");
+    const telefone = valueOrBlank(parsed.telefone) || (conversation && conversation.phone ? conversation.phone : "");
+    const observacoes = ensureObservacoes(parsed);
 
     return [
-      FIELD_BY_KEY.cliente.heading,
-      client || "CONFIRMAR",
+      "👤 Dados do Cliente",
       "",
-      FIELD_BY_KEY.cpf.heading,
-      parsed.cpf || "CONFIRMAR",
+      `Nome: ${nome}`,
+      `CPF: ${valueOrBlank(parsed.cpf)}`,
+      `Telefone: ${telefone}`,
+      `E-mail: ${valueOrBlank(parsed.email)}`,
       "",
-      FIELD_BY_KEY.telefone.heading,
-      phone || "CONFIRMAR",
+      "📍 Entrega",
       "",
-      FIELD_BY_KEY.data_entrega.heading,
-      parsed.data_entrega || "CONFIRMAR",
+      `Endereço: ${valueOrBlank(parsed.endereco)}`,
+      `Bairro: ${valueOrBlank(parsed.bairro)}`,
+      `Cidade: ${valueOrBlank(parsed.cidade)}`,
+      `Estado: ${valueOrBlank(parsed.estado)}`,
+      `CEP: ${cepValue(parsed)}`,
+      `Referência: ${valueOrBlank(parsed.referencia)}`,
       "",
-      FIELD_BY_KEY.endereco.heading,
-      parsed.endereco || "CONFIRMAR",
+      "📦 Itens",
       "",
-      FIELD_BY_KEY.referencia.heading,
-      parsed.referencia || "CONFIRMAR",
-      "",
-      FIELD_BY_KEY.email.heading,
-      parsed.email || "CONFIRMAR",
-      "",
-      FIELD_BY_KEY.itens.heading,
       listBlock(parsed.itens),
       "",
-      FIELD_BY_KEY.valores.heading,
-      parsed.valores || "CONFIRMAR",
+      `💰 Valor dos Produtos: ${valueOrBlank(parsed.valor_produtos || parsed.valores)}`,
       "",
-      FIELD_BY_KEY.confianca_preco.heading,
-      parsed.confianca_preco || "CONFIRMAR",
+      `🚚 Frete: ${valueOrBlank(parsed.frete)}`,
       "",
-      FIELD_BY_KEY.total.heading,
-      parsed.total || "CONFIRMAR",
+      `💵 Total do Pedido: ${valueOrBlank(parsed.total_pedido || parsed.total)}`,
       "",
-      FIELD_BY_KEY.pagamento.heading,
-      parsed.pagamento || "CONFIRMAR",
+      `⏱️ Prazo de Entrega: ${valueOrBlank(parsed.prazo_entrega || parsed.prazo)}`,
       "",
-      FIELD_BY_KEY.prazo.heading,
-      parsed.prazo || "CONFIRMAR",
+      "💳 Forma de Pagamento",
       "",
-      FIELD_BY_KEY.pendencias.heading,
-      listBlock(pendencias),
+      `• PIX/À vista: ${valueOrBlank(parsed.pix)}`,
+      `• Cartão: ${valueOrBlank(parsed.cartao)}`,
       "",
-      FIELD_BY_KEY.score_confianca.heading,
-      parsed.score_confianca || estimateScore(parsed, client, phone)
-    ].join("\n");
+      "📝 Observações",
+      listBlock(observacoes)
+    ].join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
 
   function validateCommercialFicha(textOrParsed, conversation) {
     const parsed = typeof textOrParsed === "string" ? parseResponse(textOrParsed) : textOrParsed;
     const formatted = typeof textOrParsed === "string" ? textOrParsed : formatCommercialFicha(parsed, conversation);
     const missing = [];
-    if (!/👤\s*Cliente/i.test(formatted) || isConfirm(parsed.cliente) && !(conversation && conversation.client_name)) {
-      missing.push("CLIENTE");
-    }
-    if (!/📞\s*Telefone/i.test(formatted)) {
-      missing.push("TELEFONE");
-    }
-    const hasProduct = (parsed.itens || []).some((item) => item && !/^CONFIRMAR$/i.test(item));
-    if (!/📦\s*Produtos/i.test(formatted) || !hasProduct) {
-      missing.push("PRODUTO");
-    }
+    const nameOk = !isBlank(parsed.nome || parsed.cliente) || Boolean(conversation && conversation.client_name);
+    if (!/👤\s*Dados do Cliente/i.test(formatted) || !nameOk) missing.push("CLIENTE");
+    if (!/📦\s*Itens/i.test(formatted) || !(parsed.itens || []).some((item) => !isBlank(item))) missing.push("PRODUTO");
+    if (!/🚚\s*Frete:/i.test(formatted)) missing.push("FRETE");
+    if (!/💵\s*Total do Pedido:/i.test(formatted)) missing.push("TOTAL");
     return {
       ok: missing.length === 0,
       missing,
@@ -300,9 +299,9 @@
     const parsed = parseResponse(text);
     return {
       products: parsed.itens,
-      missing_info: parsed.pendencias,
-      summary: parsed.score_confianca || parsed.prazo || parsed.valores || "",
-      questions: parsed.pendencias,
+      missing_info: parsed.observacoes,
+      summary: [parsed.valor_produtos, parsed.frete, parsed.total_pedido].filter(Boolean).join(" | "),
+      questions: parsed.observacoes,
       structured: parsed,
       raw_text: parsed.raw_text
     };
