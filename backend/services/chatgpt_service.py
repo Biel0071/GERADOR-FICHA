@@ -9,9 +9,9 @@ from typing import Any
 
 CHATGPT_PROJECT_URL = os.getenv(
     "CHATGPT_PROJECT_URL",
-    "https://chatgpt.com/g/g-p-6a50feebc29481919b4dcaa0936ec203-ficha-pedido/project",
+    "https://chatgpt.com/g/g-p-6a5fc590af1c81918c49fa7a9083972d-ficha-pedido/project",
 )
-CHATGPT_PROJECT_ID = "6a50feebc29481919b4dcaa0936ec203"
+CHATGPT_PROJECT_ID = "6a5fc590af1c81918c49fa7a9083972d"
 CHATGPT_EMAIL = os.getenv("CHATGPT_EMAIL", "")
 CHATGPT_PASSWORD = os.getenv("CHATGPT_PASSWORD", "")
 SESSION_FILE = Path(os.getenv("CHATGPT_SESSION_FILE", "/root/gerar-ficha/backend/chatgpt_session.json"))
@@ -218,26 +218,27 @@ async def submit_login_code(code: str) -> dict[str, Any]:
     page = _login_state["page"]
     context = _login_state["context"]
     try:
-        # Procurar campo de código OTP (múltiplos seletores)
+        # Procurar campo de código OTP (múltiplos seletores incluindo OpenAI Auth0 UI)
         code_input = await _wait_for(
             lambda: page.query_selector(
-                'input[autocomplete="one-time-code"], input[inputmode="numeric"], '
-                'input[name="code"], input[type="text"][maxlength="6"], '
-                'input[type="tel"], input[type="number"]'
+                'input[id="code"], input[name="code"], input[autocomplete="one-time-code"], '
+                'input[inputmode="numeric"], input[placeholder*="código"], input[placeholder*="code"], '
+                'input[type="text"], input[type="tel"], input[type="number"]'
             ),
-            timeout_ms=10000, message="Campo de código OTP não encontrado."
+            timeout_ms=15000, message="Campo de código OTP da OpenAI não encontrado."
         )
 
         try:
+            await code_input.focus()
             await code_input.click(click_count=3)
         except Exception:
-            await code_input.click()
+            pass
         await code_input.fill(code.strip())
         await asyncio.sleep(0.5)
 
-        # Tentar clicar botão de confirmar, ou Enter
+        # Tentar clicar botão "Continuar" / "Continue" / "Verify"
         confirm_btn = await page.query_selector(
-            'button[type="submit"], button:has-text("Continue"), button:has-text("Continuar"), '
+            'button[type="submit"], button:has-text("Continuar"), button:has-text("Continue"), '
             'button:has-text("Verify"), button:has-text("Confirmar")'
         )
         if confirm_btn and await confirm_btn.is_visible():
@@ -245,10 +246,12 @@ async def submit_login_code(code: str) -> dict[str, Any]:
         else:
             await page.keyboard.press("Enter")
 
+        await asyncio.sleep(5)
+
         # Aguardar redirecionamento ou navegar direto ao projeto para testar autenticação
         try:
             await page.goto(CHATGPT_PROJECT_URL, wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(4)
+            await asyncio.sleep(5)
         except Exception:
             pass
 
