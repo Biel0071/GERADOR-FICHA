@@ -78,25 +78,21 @@ async def _wait_for(fn, *, timeout_ms: int, interval_ms: int = 600, message: str
 
 
 async def _save_session(context) -> None:
-    cookies = await context.cookies()
-    storage = await context.storage_state()
-    data = {"cookies": cookies, "storage": storage}
     SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SESSION_FILE.write_text(json.dumps(data))
+    await context.storage_state(path=str(SESSION_FILE))
+
+
+async def _create_context(browser) -> Any:
+    if session_exists():
+        try:
+            return await browser.new_context(storage_state=str(SESSION_FILE))
+        except Exception:
+            pass
+    return await browser.new_context()
 
 
 async def _load_session(context) -> bool:
-    if not session_exists():
-        return False
-    try:
-        data = json.loads(SESSION_FILE.read_text())
-        if data.get("storage"):
-            await context.add_cookies(data["storage"].get("cookies", []))
-        elif data.get("cookies"):
-            await context.add_cookies(data["cookies"])
-        return True
-    except Exception:
-        return False
+    return session_exists()
 
 
 # ─── Login interativo (chamado pelos endpoints /login/*) ────────────────────
@@ -324,13 +320,7 @@ async def generate_ficha(prompt: str, job_id: str = "") -> dict[str, Any]:
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(**_chromium_launch_kwargs())
-        context = await browser.new_context()
-
-        # Carregar sessão salva
-        loaded = await _load_session(context)
-        if not loaded:
-            await browser.close()
-            raise ChatGPTError("Erro ao carregar sessão. Refaça o login.", status_code=401)
+        context = await _create_context(browser)
 
         page = await context.new_page()
         try:

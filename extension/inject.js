@@ -194,11 +194,13 @@
             const data = response.data;
             if (data.session_exists) {
               if (vpsBadge) { vpsBadge.textContent = "🟢 Sessão Ativa"; vpsBadge.dataset.tone = "success"; }
-              if (vpsMsg) { vpsMsg.textContent = "VPS logada via Playwright! Pronta para todas as extensões."; }
+              if (vpsMsg) { vpsMsg.textContent = "🟢 VPS logada via Playwright! Pronta para todas as extensões."; }
               if (vpsOtpContainer) { vpsOtpContainer.style.display = "none"; }
+              if (vpsStartBtn && vpsStartBtn.parentElement) { vpsStartBtn.parentElement.style.display = "none"; }
             } else {
               if (vpsBadge) { vpsBadge.textContent = "🔴 Não Logada"; vpsBadge.dataset.tone = "error"; }
               if (vpsMsg) { vpsMsg.textContent = "Clique em 'Iniciar Login VPS' para iniciar via Playwright."; }
+              if (vpsStartBtn && vpsStartBtn.parentElement) { vpsStartBtn.parentElement.style.display = "flex"; }
             }
           } else {
             if (vpsBadge) { vpsBadge.textContent = "⚠️ Offline"; vpsBadge.dataset.tone = "warning"; }
@@ -240,7 +242,7 @@
       vpsOtpSubmit.addEventListener("click", () => {
         const code = vpsOtpInput ? vpsOtpInput.value.trim() : "";
         if (!code) {
-          if (vpsMsg) vpsMsg.textContent = "Por favor, digite o código OTP.";
+          if (vpsMsg) vpsMsg.textContent = "Por favor, digite o código OTP de 6 dígitos.";
           return;
         }
         if (vpsMsg) vpsMsg.textContent = "Enviando código OTP para a VPS...";
@@ -258,7 +260,8 @@
             if (vpsOtpInput) vpsOtpInput.value = "";
             checkVpsSessionStatus();
           } else {
-            if (vpsMsg) vpsMsg.textContent = `Erro ao verificar OTP: ${data.message || "Código inválido"}`;
+            if (vpsBadge) { vpsBadge.textContent = "🔴 Código Incorreto"; vpsBadge.dataset.tone = "error"; }
+            if (vpsMsg) vpsMsg.textContent = `❌ ${data.message || "Código incorreto ou expirado"}`;
           }
         });
       });
@@ -389,7 +392,7 @@
               <button type="button" class="pfixa-btn pfixa-btn-sm" data-pfixa-vps-login-start style="flex:1;">🤖 Iniciar Login VPS</button>
             </div>
             <div class="pfixa-vps-otp-row" data-pfixa-vps-otp-container style="display: none; margin-top: 6px; gap: 4px; flex-wrap: wrap;">
-              <input type="text" data-pfixa-vps-otp-input placeholder="Código OTP (6 dígitos)" style="flex:1; min-width: 120px; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px;" />
+              <input type="text" data-pfixa-vps-otp-input placeholder="Código OTP (6 dígitos)" style="flex:1; min-width: 120px; padding: 6px 8px; background: #ffffff !important; color: #111827 !important; border: 1px solid #9ca3af; border-radius: 4px; font-size: 13px; font-weight: 700; text-align: center;" />
               <button type="button" class="pfixa-btn pfixa-btn-sm pfixa-btn-primary" data-pfixa-vps-otp-submit>Confirmar OTP</button>
               <button type="button" class="pfixa-btn pfixa-btn-sm" data-pfixa-vps-otp-resend title="Solicitar novo código OTP para o e-mail">🔁 Reenviar Código</button>
             </div>

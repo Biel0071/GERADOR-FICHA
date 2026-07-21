@@ -398,6 +398,9 @@
 
   async function copyGeneratedFicha(fichaFinal, conversation, metadata) {
     await copyText(fichaFinal);
+    if (conversation && conversation.client_name && WhatsApp.markChatWithFicha) {
+      await WhatsApp.markChatWithFicha(conversation.client_name);
+    }
     await Storage.set(C.STORAGE_KEYS.LAST_GENERATED_FICHA, fichaFinal);
     await Storage.set(C.STORAGE_KEYS.LAST_GENERATED_FICHA_META, {
       ficha: fichaFinal,

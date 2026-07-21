@@ -885,6 +885,52 @@
     }
   }
 
+  async function markChatWithFicha(clientName) {
+    if (!clientName || clientName === "CONFIRMAR") return;
+    try {
+      const Storage = globalThis.ProjetoFichaStorage;
+      if (!Storage) return;
+      const chats = await Storage.get("projetoFicha.generatedChats", []);
+      if (Array.isArray(chats) && !chats.includes(clientName)) {
+        chats.push(clientName);
+        await Storage.set("projetoFicha.generatedChats", chats);
+      }
+    } catch (_) {}
+  }
+
+  function startContactBadgesObserver() {
+    setInterval(async () => {
+      try {
+        const Storage = globalThis.ProjetoFichaStorage;
+        if (!Storage) return;
+        const chats = await Storage.get("projetoFicha.generatedChats", []);
+        if (!Array.isArray(chats) || !chats.length) return;
+
+        const listItems = document.querySelectorAll("#pane-side [role='listitem'], #pane-side [data-testid='cell-frame-container']");
+        listItems.forEach((row) => {
+          const titleSpan = row.querySelector("span[title], [data-testid='cell-frame-title'] span");
+          if (!titleSpan) return;
+          const name = (titleSpan.getAttribute("title") || titleSpan.textContent || "").trim();
+          if (name && chats.some(c => c && (c === name || name.includes(c) || c.includes(name)))) {
+            if (!row.querySelector(".pfixa-contact-badge")) {
+              const badge = document.createElement("span");
+              badge.className = "pfixa-contact-badge";
+              badge.textContent = " 📋";
+              badge.title = "Ficha gerada para este cliente";
+              badge.style.cssText = "font-size:13px; margin-left:4px; vertical-align:middle;";
+              titleSpan.appendChild(badge);
+            }
+          }
+        });
+      } catch (_) {}
+    }, 2500);
+  }
+
+  // Iniciar observador de badges da lista de contatos
+  try {
+    startContactBadgesObserver();
+  } catch (_) {}
+
   globalThis.ProjetoFichaWhatsApp = {
     buildVisualContextManifest,
     captureConversation,
@@ -893,6 +939,7 @@
     extractClientName,
     extractPhoneFromText,
     fillComposer,
-    getComposer
+    getComposer,
+    markChatWithFicha
   };
 })();
