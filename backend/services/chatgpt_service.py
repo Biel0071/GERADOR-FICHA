@@ -105,7 +105,7 @@ async def _load_session(context) -> bool:
 
 # ─── Login interativo (chamado pelos endpoints /login/*) ────────────────────
 
-async def start_login(email: str = "") -> dict[str, Any]:
+async def start_login(email: str = "", force: bool = False) -> dict[str, Any]:
     """Inicia o processo de login no ChatGPT com e-mail fornecido ou configurado. Retorna status."""
     global _login_state
     target_email = email.strip() or CHATGPT_EMAIL.strip() or os.getenv("CHATGPT_EMAIL", "").strip()
@@ -113,17 +113,13 @@ async def start_login(email: str = "") -> dict[str, Any]:
         return {"status": "error", "message": "Informe o e-mail para realizar o login no ChatGPT."}
 
     async with _login_lock:
-        # Se houver browser ativo que fechou ou desconectou, fazemos a limpeza
+        # Fechar qualquer browser ou página anterior para garantir envio de um NOVO código OTP
         if _login_state.get("browser"):
             try:
-                if _login_state.get("page") and _login_state["page"].is_closed():
-                    await _login_state["browser"].close()
-                    _login_state.update({"status": "idle", "page": None, "browser": None, "context": None})
+                await _login_state["browser"].close()
             except Exception:
-                _login_state.update({"status": "idle", "page": None, "browser": None, "context": None})
-
-        if _login_state["status"] == "waiting_code" and _login_state.get("page") and not _login_state["page"].is_closed():
-            return {"status": "waiting_code", "message": "Aguardando código OTP. Digite os 6 dígitos."}
+                pass
+            _login_state.update({"status": "idle", "page": None, "browser": None, "context": None})
 
         try:
             from playwright.async_api import async_playwright
@@ -165,6 +161,17 @@ async def start_login(email: str = "") -> dict[str, Any]:
                 await page.keyboard.press("Enter")
             await asyncio.sleep(4)
 
+            # Se o OpenAI pedir senha, ou botão de enviar código temporário
+            send_code_btn = await page.query_selector(
+                'button:has-text("Send code"), button:has-text("Send temporary code"), '
+                'button:has-text("Email a code"), button:has-text("Enviar código"), '
+                'button:has-text("Email temporary code"), button:has-text("Continue with login code"), '
+                'button:has-text("Send me a code"), a:has-text("Send temporary code")'
+            )
+            if send_code_btn and await send_code_btn.is_visible():
+                await send_code_btn.click()
+                await asyncio.sleep(4)
+
             # Preencher senha se o campo for solicitado
             pass_input = await page.query_selector('input[type="password"]')
             if pass_input and await pass_input.is_visible() and CHATGPT_PASSWORD:
@@ -180,9 +187,9 @@ async def start_login(email: str = "") -> dict[str, Any]:
                 "6-digit", "sent you", "enviamos", "check your inbox", "sign in with a temporary code"
             ])
 
-            if needs_code or "auth" in page.url:
+            if needs_code or "auth" in page.url or "login" in page.url:
                 _login_state["status"] = "waiting_code"
-                return {"status": "waiting_code", "message": f"Código OTP enviado para {target_email}! Verifique a caixa de entrada."}
+                return {"status": "waiting_code", "message": f"Novo código OTP disparado para {target_email}! Verifique o e-mail."}
 
             if "chatgpt.com" in page.url and "auth" not in page.url:
                 await _save_session(context)
@@ -190,7 +197,7 @@ async def start_login(email: str = "") -> dict[str, Any]:
                 return {"status": "ok", "message": "Login concluído com sucesso. Sessão salva."}
 
             _login_state["status"] = "waiting_code"
-            return {"status": "waiting_code", "message": f"Aguardando código OTP enviado para {target_email}."}
+            return {"status": "waiting_code", "message": f"Código OTP disparado para {target_email}."}
 
         except Exception as e:
             _login_state["status"] = "error"
