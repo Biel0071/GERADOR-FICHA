@@ -58,7 +58,14 @@ class ChatGPTError(RuntimeError):
 
 
 def session_exists() -> bool:
-    return SESSION_FILE.exists() and SESSION_FILE.stat().st_size > 10
+    if not SESSION_FILE.exists() or SESSION_FILE.stat().st_size < 100:
+        return False
+    try:
+        data = json.loads(SESSION_FILE.read_text(encoding="utf-8"))
+        cookies = data.get("cookies", [])
+        return any(any(k in c.get("name", "") for k in ["session", "auth", "token", "cf_clearance", "next-auth"]) for c in cookies)
+    except Exception:
+        return False
 
 
 async def _wait_for(fn, *, timeout_ms: int, interval_ms: int = 600, message: str = "Timeout") -> Any:
@@ -230,37 +237,25 @@ async def submit_login_code(code: str) -> dict[str, Any]:
         else:
             await page.keyboard.press("Enter")
 
-        # Aguardar redirecionamento (até 15s)
-        for _ in range(15):
-            await asyncio.sleep(1)
-            current_url = page.url
-            if "chatgpt.com" in current_url and "/auth" not in current_url and "login" not in current_url:
-                await _save_session(context)
-                _login_state["status"] = "idle"
-                return {"status": "ok", "message": f"Login concluído. URL: {current_url}. Sessão salva."}
+        # Aguardar redirecionamento ou navegar direto ao projeto para testar autenticação
+        try:
+            await page.goto(CHATGPT_PROJECT_URL, wait_until="domcontentloaded", timeout=30000)
+            await asyncio.sleep(4)
+        except Exception:
+            pass
 
-        # Verificação final: navegar direto ao ChatGPT
-        await page.goto("https://chatgpt.com", wait_until="domcontentloaded", timeout=20000)
-        await asyncio.sleep(3)
         current_url = page.url
-        cookies = await context.cookies()
-        # Se tiver cookies de autenticação (access_token / __Secure-next-auth)
-        auth_cookies = [c for c in cookies if any(k in c.get("name", "") for k in ["access_token", "next-auth", "cf_clearance", "__Host-next"])]
+        composer = await page.query_selector('#prompt-textarea, div[contenteditable="true"], textarea')
+        is_authenticated = composer is not None or ("/project" in current_url or CHATGPT_PROJECT_ID in current_url)
 
-        if auth_cookies or ("chatgpt.com" in current_url and "auth" not in current_url):
+        if is_authenticated and "auth" not in current_url and "login" not in current_url:
             await _save_session(context)
             _login_state["status"] = "idle"
-            return {"status": "ok", "message": f"Sessão salva. Cookies auth: {len(auth_cookies)}. URL: {current_url}"}
-
-        # Checar se página não tem "log in" nem "sign up" no conteúdo principal
-        page_text = await page.inner_text("body")
-        if not any(w in page_text.lower() for w in ["log in", "sign up", "sign in", "entrar"]):
-            await _save_session(context)
-            _login_state["status"] = "idle"
-            return {"status": "ok", "message": "Sessão confirmada e salva."}
-
-        _login_state["status"] = "waiting_code"
-        return {"status": "error", "message": f"Código não aceito ou expirado. URL atual: {current_url}. Reinicie o login."}
+            return {"status": "ok", "message": "Login no Projeto FICHA verificado e sessão salva com sucesso!"}
+        else:
+            SESSION_FILE.unlink(missing_ok=True)
+            _login_state["status"] = "error"
+            return {"status": "error", "message": f"Código OTP incorreto ou expirado. URL: {current_url}. Tente novamente."}
 
     except Exception as e:
         _login_state["status"] = "error"

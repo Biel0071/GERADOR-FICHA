@@ -626,8 +626,7 @@
     const warnings = [];
     const scrollContainer = findMessageScrollContainer();
     const originalTop = scrollContainer ? scrollContainer.scrollTop : 0;
-    const desiredCount = desiredVisualCaptureCount(scrollContainer);
-    const positions = buildVisualScrollPositions(scrollContainer, desiredCount);
+    const positions = [originalTop];
     const screenshots = [];
     const imageMap = new Map();
     let audioTranscriptions = [];

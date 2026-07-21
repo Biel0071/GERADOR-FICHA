@@ -644,14 +644,7 @@
 
       let capturedConversation = options && options.regenerate && lastConversation
         ? lastConversation
-        : await WhatsApp.captureConversationDeep({
-          maxMessages: C.MAX_MESSAGES,
-          historyRounds: C.HISTORY_SCROLL_ROUNDS,
-          onProgress: (progress) => {
-            setStatus(JOB_STATUS.CAPTURING, `Carregando historico: rodada ${progress.round}/${progress.rounds}, ${progress.messages} mensagens.`);
-            Panel.setMetrics({ warnings: lastConversation && lastConversation.capture_warnings ? lastConversation.capture_warnings.length : 0 });
-          }
-        });
+        : WhatsApp.captureConversation({ maxMessages: C.MAX_MESSAGES });
       validateConversation(capturedConversation);
       if (!(options && options.regenerate && capturedConversation.visual_context_key)) {
         capturedConversation = await attachVisualContextToConversation(jobId, capturedConversation);
