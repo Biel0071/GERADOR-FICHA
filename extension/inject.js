@@ -174,6 +174,94 @@
       updateGenerateLabel(Settings.materialApiReady(settings));
     });
 
+    // --- VPS Playwright Login Wire ---
+    const vpsBadge = panel.querySelector("[data-pfixa-vps-session-badge]");
+    const vpsStartBtn = panel.querySelector("[data-pfixa-vps-login-start]");
+    const vpsOtpContainer = panel.querySelector("[data-pfixa-vps-otp-container]");
+    const vpsOtpInput = panel.querySelector("[data-pfixa-vps-otp-input]");
+    const vpsOtpSubmit = panel.querySelector("[data-pfixa-vps-otp-submit]");
+    const vpsMsg = panel.querySelector("[data-pfixa-vps-login-msg]");
+
+    function checkVpsSessionStatus() {
+      const backendUrl = C && C.BACKEND_URL ? C.BACKEND_URL : "http://209.50.241.22:8000";
+      fetch(`${backendUrl}/login/status`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.session_exists) {
+            if (vpsBadge) { vpsBadge.textContent = "🟢 Sessão Ativa"; vpsBadge.dataset.tone = "success"; }
+            if (vpsMsg) { vpsMsg.textContent = "VPS logada via Playwright! Pronta para todas as extensões."; }
+            if (vpsOtpContainer) { vpsOtpContainer.style.display = "none"; }
+          } else {
+            if (vpsBadge) { vpsBadge.textContent = "🔴 Não Logada"; vpsBadge.dataset.tone = "error"; }
+            if (vpsMsg) { vpsMsg.textContent = "Clique em 'Iniciar Login VPS' para iniciar via Playwright."; }
+          }
+        })
+        .catch(() => {
+          if (vpsBadge) { vpsBadge.textContent = "⚠️ Offline"; vpsBadge.dataset.tone = "warning"; }
+          if (vpsMsg) { vpsMsg.textContent = "Não foi possível conectar à VPS."; }
+        });
+    }
+
+    if (vpsStartBtn) {
+      vpsStartBtn.addEventListener("click", () => {
+        const backendUrl = C && C.BACKEND_URL ? C.BACKEND_URL : "http://209.50.241.22:8000";
+        if (vpsMsg) vpsMsg.textContent = "Iniciando Playwright na VPS...";
+        if (vpsStartBtn) vpsStartBtn.disabled = true;
+        fetch(`${backendUrl}/login/start`, { method: "POST" })
+          .then((res) => res.json())
+          .then((data) => {
+            if (vpsStartBtn) vpsStartBtn.disabled = false;
+            if (data.status === "waiting_code") {
+              if (vpsOtpContainer) vpsOtpContainer.style.display = "flex";
+              if (vpsBadge) { vpsBadge.textContent = "🟡 Aguardando OTP"; vpsBadge.dataset.tone = "warning"; }
+              if (vpsMsg) vpsMsg.textContent = "Código enviado para o e-mail! Digite o código OTP abaixo:";
+            } else if (data.status === "ok") {
+              if (vpsOtpContainer) vpsOtpContainer.style.display = "none";
+              checkVpsSessionStatus();
+            } else {
+              if (vpsMsg) vpsMsg.textContent = `Erro no login VPS: ${data.message || "desconhecido"}`;
+            }
+          })
+          .catch((err) => {
+            if (vpsStartBtn) vpsStartBtn.disabled = false;
+            if (vpsMsg) vpsMsg.textContent = `Erro de conexão: ${err.message}`;
+          });
+      });
+    }
+
+    if (vpsOtpSubmit) {
+      vpsOtpSubmit.addEventListener("click", () => {
+        const code = vpsOtpInput ? vpsOtpInput.value.trim() : "";
+        if (!code) {
+          if (vpsMsg) vpsMsg.textContent = "Por favor, digite o código OTP.";
+          return;
+        }
+        const backendUrl = C && C.BACKEND_URL ? C.BACKEND_URL : "http://209.50.241.22:8000";
+        if (vpsMsg) vpsMsg.textContent = "Enviando código OTP para a VPS...";
+        if (vpsOtpSubmit) vpsOtpSubmit.disabled = true;
+        fetch(`${backendUrl}/login/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code })
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (vpsOtpSubmit) vpsOtpSubmit.disabled = false;
+            if (data.status === "ok") {
+              if (vpsOtpContainer) vpsOtpContainer.style.display = "none";
+              if (vpsOtpInput) vpsOtpInput.value = "";
+              checkVpsSessionStatus();
+            } else {
+              if (vpsMsg) vpsMsg.textContent = `Erro ao verificar OTP: ${data.message || "Código inválido"}`;
+            }
+          })
+          .catch((err) => {
+            if (vpsOtpSubmit) vpsOtpSubmit.disabled = false;
+            if (vpsMsg) vpsMsg.textContent = `Erro de conexão: ${err.message}`;
+          });
+      });
+    }
+
     tabs.forEach((tab) => {
       tab.addEventListener("click", () => {
         const provider = tab.dataset.pfixaModeTab;
@@ -200,6 +288,8 @@
         });
       });
     }
+
+    checkVpsSessionStatus();
   }
 
   function createPanel() {
@@ -271,11 +361,21 @@
             <span class="pfixa-config-label">Conversa ativa</span>
             <a class="pfixa-config-link" href="${C && C.CHATGPT_PROJECT_URL ? C.CHATGPT_PROJECT_URL : "https://chatgpt.com"}" target="_blank" rel="noopener noreferrer" title="Abrir conversa do Projeto FICHA">Ficha de Pedido ↗</a>
           </div>
-          <div class="pfixa-config-row" style="margin-top: 4px;">
-            <span class="pfixa-config-label">Status Login</span>
-            <a class="pfixa-config-link" href="https://chatgpt.com" target="_blank" rel="noopener noreferrer" title="Abrir ChatGPT para Fazer Login ou Digitar OTP">🔑 Entrar / Digitar OTP ↗</a>
+          <div class="pfixa-vps-login-box" style="margin-top: 8px; padding: 8px; background: rgba(0,0,0,0.04); border-radius: 6px; border: 1px solid rgba(0,0,0,0.08);">
+            <div class="pfixa-config-row" style="margin-bottom: 4px;">
+              <span class="pfixa-config-label"><strong>Sessão VPS Playwright</strong></span>
+              <span class="pfixa-config-badge" data-pfixa-vps-session-badge>verificando...</span>
+            </div>
+            <div style="display: flex; gap: 4px; margin-top: 4px;">
+              <button type="button" class="pfixa-btn pfixa-btn-sm" data-pfixa-vps-login-start style="flex:1;">🤖 Iniciar Login VPS</button>
+            </div>
+            <div class="pfixa-vps-otp-row" data-pfixa-vps-otp-container style="display: none; margin-top: 6px; gap: 4px;">
+              <input type="text" data-pfixa-vps-otp-input placeholder="Código OTP (6 dígitos)" style="flex:1; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px;" />
+              <button type="button" class="pfixa-btn pfixa-btn-sm pfixa-btn-primary" data-pfixa-vps-otp-submit>Confirmar OTP</button>
+            </div>
+            <small class="pfixa-config-status" data-pfixa-vps-login-msg style="display: block; margin-top: 4px; font-size: 11px;"></small>
           </div>
-          <p class="pfixa-config-note">Sempre envia para a conversa configurada do Gabriel. A ficha formatada fica disponível para copiar e colar.</p>
+          <p class="pfixa-config-note" style="margin-top: 6px;">O Playwright roda na VPS com a sessão salva em <code>chatgpt_session.json</code> e atende todas as extensões conectadas.</p>
         </div>
 
         <div class="pfixa-mode-config is-hidden" data-pfixa-mode-config="material_api">
