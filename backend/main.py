@@ -11,8 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from services.logging_service import append_jsonl
 from services.material_api_service import MaterialApiClient, MaterialApiError
+import asyncio
 from services.chatgpt_service import (
-    ChatGPTError, generate_ficha, start_login, submit_login_code, session_exists
+    ChatGPTError, generate_ficha, start_login, submit_login_code, session_exists, refresh_keep_alive
 )
 
 try:
@@ -31,6 +32,17 @@ app = FastAPI(
     description="Proxy seguro da Material API, health check, logs e diagnosticos da extensao.",
     version="1.1.0",
 )
+
+@app.on_event("startup")
+async def startup_event() -> None:
+    async def keep_alive_loop():
+        while True:
+            await asyncio.sleep(43200)  # Executa a cada 12 horas
+            try:
+                await refresh_keep_alive()
+            except Exception:
+                pass
+    asyncio.create_task(keep_alive_loop())
 
 app.add_middleware(
     CORSMiddleware,

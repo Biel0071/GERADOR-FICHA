@@ -1268,6 +1268,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message && message.type === C.MESSAGE_TYPES.VPS_LOGIN_STATUS) {
+    fetch(`${C.BACKEND_URL}/login/status`)
+      .then((res) => res.json())
+      .then((data) => sendResponse({ ok: true, data }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (message && message.type === C.MESSAGE_TYPES.VPS_LOGIN_START) {
+    fetch(`${C.BACKEND_URL}/login/start`, { method: "POST" })
+      .then((res) => res.json())
+      .then((data) => sendResponse({ ok: true, data }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (message && message.type === C.MESSAGE_TYPES.VPS_LOGIN_VERIFY) {
+    fetch(`${C.BACKEND_URL}/login/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: message.code })
+    })
+      .then((res) => res.json())
+      .then((data) => sendResponse({ ok: true, data }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
   if (!message || message.type !== C.MESSAGE_TYPES.GENERATE) {
     return false;
   }

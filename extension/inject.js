@@ -183,49 +183,54 @@
     const vpsMsg = panel.querySelector("[data-pfixa-vps-login-msg]");
 
     function checkVpsSessionStatus() {
-      const backendUrl = C && C.BACKEND_URL ? C.BACKEND_URL : "http://209.50.241.22:8000";
-      fetch(`${backendUrl}/login/status`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data && data.session_exists) {
-            if (vpsBadge) { vpsBadge.textContent = "🟢 Sessão Ativa"; vpsBadge.dataset.tone = "success"; }
-            if (vpsMsg) { vpsMsg.textContent = "VPS logada via Playwright! Pronta para todas as extensões."; }
-            if (vpsOtpContainer) { vpsOtpContainer.style.display = "none"; }
-          } else {
-            if (vpsBadge) { vpsBadge.textContent = "🔴 Não Logada"; vpsBadge.dataset.tone = "error"; }
-            if (vpsMsg) { vpsMsg.textContent = "Clique em 'Iniciar Login VPS' para iniciar via Playwright."; }
+      try {
+        chrome.runtime.sendMessage({ type: C.MESSAGE_TYPES.VPS_LOGIN_STATUS }, (response) => {
+          if (chrome.runtime.lastError) {
+            if (vpsBadge) { vpsBadge.textContent = "⚠️ Offline"; vpsBadge.dataset.tone = "warning"; }
+            if (vpsMsg) { vpsMsg.textContent = "Recarregue a página do WhatsApp."; }
+            return;
           }
-        })
-        .catch(() => {
-          if (vpsBadge) { vpsBadge.textContent = "⚠️ Offline"; vpsBadge.dataset.tone = "warning"; }
-          if (vpsMsg) { vpsMsg.textContent = "Não foi possível conectar à VPS."; }
+          if (response && response.ok && response.data) {
+            const data = response.data;
+            if (data.session_exists) {
+              if (vpsBadge) { vpsBadge.textContent = "🟢 Sessão Ativa"; vpsBadge.dataset.tone = "success"; }
+              if (vpsMsg) { vpsMsg.textContent = "VPS logada via Playwright! Pronta para todas as extensões."; }
+              if (vpsOtpContainer) { vpsOtpContainer.style.display = "none"; }
+            } else {
+              if (vpsBadge) { vpsBadge.textContent = "🔴 Não Logada"; vpsBadge.dataset.tone = "error"; }
+              if (vpsMsg) { vpsMsg.textContent = "Clique em 'Iniciar Login VPS' para iniciar via Playwright."; }
+            }
+          } else {
+            if (vpsBadge) { vpsBadge.textContent = "⚠️ Offline"; vpsBadge.dataset.tone = "warning"; }
+            if (vpsMsg) { vpsMsg.textContent = "Servidor VPS offline ou sem resposta."; }
+          }
         });
+      } catch (_) {}
     }
 
     if (vpsStartBtn) {
       vpsStartBtn.addEventListener("click", () => {
-        const backendUrl = C && C.BACKEND_URL ? C.BACKEND_URL : "http://209.50.241.22:8000";
         if (vpsMsg) vpsMsg.textContent = "Iniciando Playwright na VPS...";
         if (vpsStartBtn) vpsStartBtn.disabled = true;
-        fetch(`${backendUrl}/login/start`, { method: "POST" })
-          .then((res) => res.json())
-          .then((data) => {
-            if (vpsStartBtn) vpsStartBtn.disabled = false;
-            if (data.status === "waiting_code") {
-              if (vpsOtpContainer) vpsOtpContainer.style.display = "flex";
-              if (vpsBadge) { vpsBadge.textContent = "🟡 Aguardando OTP"; vpsBadge.dataset.tone = "warning"; }
-              if (vpsMsg) vpsMsg.textContent = "Código enviado para o e-mail! Digite o código OTP abaixo:";
-            } else if (data.status === "ok") {
-              if (vpsOtpContainer) vpsOtpContainer.style.display = "none";
-              checkVpsSessionStatus();
-            } else {
-              if (vpsMsg) vpsMsg.textContent = `Erro no login VPS: ${data.message || "desconhecido"}`;
-            }
-          })
-          .catch((err) => {
-            if (vpsStartBtn) vpsStartBtn.disabled = false;
-            if (vpsMsg) vpsMsg.textContent = `Erro de conexão: ${err.message}`;
-          });
+        chrome.runtime.sendMessage({ type: C.MESSAGE_TYPES.VPS_LOGIN_START }, (response) => {
+          if (vpsStartBtn) vpsStartBtn.disabled = false;
+          if (chrome.runtime.lastError || !response || !response.ok) {
+            const err = (response && response.error) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || "Erro de conexão";
+            if (vpsMsg) vpsMsg.textContent = `Erro de conexão com VPS: ${err}`;
+            return;
+          }
+          const data = response.data || {};
+          if (data.status === "waiting_code") {
+            if (vpsOtpContainer) vpsOtpContainer.style.display = "flex";
+            if (vpsBadge) { vpsBadge.textContent = "🟡 Aguardando OTP"; vpsBadge.dataset.tone = "warning"; }
+            if (vpsMsg) vpsMsg.textContent = "Código enviado para o e-mail! Digite o código OTP abaixo:";
+          } else if (data.status === "ok") {
+            if (vpsOtpContainer) vpsOtpContainer.style.display = "none";
+            checkVpsSessionStatus();
+          } else {
+            if (vpsMsg) vpsMsg.textContent = `Status VPS: ${data.message || "desconhecido"}`;
+          }
+        });
       });
     }
 
@@ -236,29 +241,24 @@
           if (vpsMsg) vpsMsg.textContent = "Por favor, digite o código OTP.";
           return;
         }
-        const backendUrl = C && C.BACKEND_URL ? C.BACKEND_URL : "http://209.50.241.22:8000";
         if (vpsMsg) vpsMsg.textContent = "Enviando código OTP para a VPS...";
         if (vpsOtpSubmit) vpsOtpSubmit.disabled = true;
-        fetch(`${backendUrl}/login/verify`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code })
-        })
-          .then((res) => res.json())
-          .then((data) => {
-            if (vpsOtpSubmit) vpsOtpSubmit.disabled = false;
-            if (data.status === "ok") {
-              if (vpsOtpContainer) vpsOtpContainer.style.display = "none";
-              if (vpsOtpInput) vpsOtpInput.value = "";
-              checkVpsSessionStatus();
-            } else {
-              if (vpsMsg) vpsMsg.textContent = `Erro ao verificar OTP: ${data.message || "Código inválido"}`;
-            }
-          })
-          .catch((err) => {
-            if (vpsOtpSubmit) vpsOtpSubmit.disabled = false;
-            if (vpsMsg) vpsMsg.textContent = `Erro de conexão: ${err.message}`;
-          });
+        chrome.runtime.sendMessage({ type: C.MESSAGE_TYPES.VPS_LOGIN_VERIFY, code }, (response) => {
+          if (vpsOtpSubmit) vpsOtpSubmit.disabled = false;
+          if (chrome.runtime.lastError || !response || !response.ok) {
+            const err = (response && response.error) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || "Erro";
+            if (vpsMsg) vpsMsg.textContent = `Erro enviando OTP: ${err}`;
+            return;
+          }
+          const data = response.data || {};
+          if (data.status === "ok") {
+            if (vpsOtpContainer) vpsOtpContainer.style.display = "none";
+            if (vpsOtpInput) vpsOtpInput.value = "";
+            checkVpsSessionStatus();
+          } else {
+            if (vpsMsg) vpsMsg.textContent = `Erro ao verificar OTP: ${data.message || "Código inválido"}`;
+          }
+        });
       });
     }
 

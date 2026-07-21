@@ -252,6 +252,30 @@ async def submit_login_code(code: str) -> dict[str, Any]:
                 pass
 
 
+async def refresh_keep_alive() -> bool:
+    """Abre o ChatGPT com a sessão salva a cada 12h para renovar os cookies e manter a conta ativa."""
+    if not session_exists():
+        return False
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(**_chromium_launch_kwargs())
+            context = await browser.new_context()
+            has_session = await _load_session(context)
+            if not has_session:
+                await browser.close()
+                return False
+            page = await context.new_page()
+            await page.goto("https://chatgpt.com", wait_until="domcontentloaded", timeout=45000)
+            await asyncio.sleep(5)
+            await _save_session(context)
+            await page.close()
+            await browser.close()
+            return True
+    except Exception:
+        return False
+
+
 # ─── Geração de ficha (chamado pelo endpoint /generate-chatgpt) ─────────────
 
 async def generate_ficha(prompt: str, job_id: str = "") -> dict[str, Any]:
