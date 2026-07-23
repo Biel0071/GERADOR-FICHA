@@ -238,23 +238,31 @@ async def start_login(email: str = "", force: bool = False) -> dict[str, Any]:
                     _log.info("[4/8] E-mail preenchido: %s", target_email)
 
                     _log.info("[5/8] Clicando 'Continue' / 'Continuar'...")
+                    # O botão correto é o submit do form, NÃO os "Continue with Google/Apple"
+                    # Tentar por submit primeiro, depois por texto exato no contexto do form
                     continue_btn = await page.query_selector(
-                        'button[type="submit"], button:has-text("Continue"), '
-                        'button:has-text("Continuar"), button:has-text("Next"), '
-                        'button:has-text("Próximo")'
+                        'button[type="submit"]'
                     )
+                    if not continue_btn or not await continue_btn.is_visible():
+                        # Fallback: procurar botão Continue que NÃO tenha "with" no texto
+                        all_btns = await page.query_selector_all('button')
+                        for btn in all_btns:
+                            btn_text = (await btn.inner_text()).strip().lower()
+                            if btn_text in ("continue", "continuar", "next", "próximo") and await btn.is_visible():
+                                continue_btn = btn
+                                break
                     if continue_btn and await continue_btn.is_visible():
                         await continue_btn.click()
                     else:
                         await page.keyboard.press("Enter")
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(8)
                     steps_completed.append("continue_clicked")
                     _log.info("[5/8] Continue clicado. URL: %s", page.url)
                     _log.info("[5/8] page_text pós-continue (300 chars): %s", (await page.inner_text("body"))[:300].replace('\n', ' '))
 
                     # Se o OpenAI pedir botão de enviar código temporário (PT e EN)
-                    _log.info("[6/8] Procurando botão de enviar código...")
-                    send_code_btn = await page.query_selector(
+                    _log.info("[6/8] Procurando botão de enviar código (com retry 15s)...")
+                    send_code_selectors = (
                         'button:has-text("Send code"), button:has-text("Send temporary code"), '
                         'button:has-text("Email a code"), button:has-text("Email temporary code"), '
                         'button:has-text("Continue with login code"), button:has-text("Send me a code"), '
@@ -264,6 +272,16 @@ async def start_login(email: str = "", force: bool = False) -> dict[str, Any]:
                         'a:has-text("Send temporary code"), a:has-text("Enviar código"), '
                         'a:has-text("código de uso único")'
                     )
+                    send_code_btn = None
+                    try:
+                        send_code_btn = await _wait_for(
+                            lambda: page.query_selector(send_code_selectors),
+                            timeout_ms=15000, interval_ms=1000,
+                            message="Botão de enviar código não encontrado."
+                        )
+                    except ChatGPTError:
+                        _log.info("[6/8] Botão de enviar código não apareceu em 15s")
+
                     if send_code_btn and await send_code_btn.is_visible():
                         await send_code_btn.click()
                         await asyncio.sleep(4)
