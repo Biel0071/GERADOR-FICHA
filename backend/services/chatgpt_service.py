@@ -185,26 +185,50 @@ async def start_login(email: str = "", force: bool = False) -> dict[str, Any]:
                     await page.goto("https://chatgpt.com/auth/login", wait_until="domcontentloaded", timeout=45000)
                     await asyncio.sleep(4)
                     steps_completed.append("page_loaded")
-                    _log.info("[2/8] Página carregada. URL atual: %s", page.url)
+                    current_text = (await page.inner_text("body"))[:500].replace('\n', ' ')
+                    _log.info("[2/8] Página carregada. URL: %s | Texto: %s", page.url, current_text[:200])
 
-                    # Clicar em "Log in" se a landing page tiver o botão
-                    _log.info("[3/8] Procurando botão 'Log in'...")
-                    login_btn = await page.query_selector('button:has-text("Log in"), a:has-text("Log in"), [data-testid="login-button"], a[href*="login"]')
-                    if login_btn and await login_btn.is_visible():
-                        await login_btn.click()
-                        await asyncio.sleep(3)
-                        steps_completed.append("login_btn_clicked")
-                        _log.info("[3/8] Botão 'Log in' clicado. URL: %s", page.url)
-                    else:
-                        _log.info("[3/8] Botão 'Log in' não encontrado (pode já estar na tela de e-mail)")
+                    # Passo 3: Clicar no botão de login principal
+                    # A landing page pode ter: "Log in or sign up", "Log in", "Entrar", "Sign in"
+                    _log.info("[3/8] Procurando botão de login...")
+
+                    # Primeiro tentar "Log in or sign up" (link/botão principal na landing page)
+                    login_selectors = [
+                        'button:has-text("Log in or sign up")',
+                        'a:has-text("Log in or sign up")',
+                        'button:has-text("Log in")',
+                        'a:has-text("Log in")',
+                        'button:has-text("Entrar")',
+                        'a:has-text("Entrar")',
+                        'button:has-text("Sign in")',
+                        '[data-testid="login-button"]',
+                    ]
+                    login_clicked = False
+                    for selector in login_selectors:
+                        btn = await page.query_selector(selector)
+                        if btn and await btn.is_visible():
+                            await btn.click()
+                            await asyncio.sleep(3)
+                            login_clicked = True
+                            steps_completed.append("login_btn_clicked")
+                            _log.info("[3/8] Clicado: '%s'. URL: %s", selector, page.url)
+                            break
+
+                    if not login_clicked:
+                        _log.info("[3/8] Nenhum botão de login encontrado")
                         steps_completed.append("login_btn_skipped")
+
+                    # Verificar se agora está na página de e-mail da Auth0/OpenAI
+                    current_text2 = (await page.inner_text("body"))[:500].replace('\n', ' ')
+                    _log.info("[3b/8] Pós-login texto: %s", current_text2[:300])
 
                     # Preencher e-mail com múltiplos seletores
                     _log.info("[4/8] Procurando campo de e-mail...")
                     email_input = await _wait_for(
                         lambda: page.query_selector(
                             'input[type="email"], input[name="email"], input[autocomplete="email"], '
-                            'input[autocomplete="username"], input[id*="email"], input[placeholder*="email"]'
+                            'input[autocomplete="username"], input[id*="email"], input[placeholder*="email"], '
+                            'input[name="username"]'
                         ),
                         timeout_ms=25000, message="Campo de e-mail do ChatGPT não encontrado."
                     )
@@ -213,23 +237,32 @@ async def start_login(email: str = "", force: bool = False) -> dict[str, Any]:
                     steps_completed.append("email_filled")
                     _log.info("[4/8] E-mail preenchido: %s", target_email)
 
-                    _log.info("[5/8] Clicando 'Continue'...")
-                    continue_btn = await page.query_selector('button[type="submit"], button:has-text("Continue"), button:has-text("Continuar")')
+                    _log.info("[5/8] Clicando 'Continue' / 'Continuar'...")
+                    continue_btn = await page.query_selector(
+                        'button[type="submit"], button:has-text("Continue"), '
+                        'button:has-text("Continuar"), button:has-text("Next"), '
+                        'button:has-text("Próximo")'
+                    )
                     if continue_btn and await continue_btn.is_visible():
                         await continue_btn.click()
                     else:
                         await page.keyboard.press("Enter")
-                    await asyncio.sleep(4)
+                    await asyncio.sleep(5)
                     steps_completed.append("continue_clicked")
                     _log.info("[5/8] Continue clicado. URL: %s", page.url)
+                    _log.info("[5/8] page_text pós-continue (300 chars): %s", (await page.inner_text("body"))[:300].replace('\n', ' '))
 
-                    # Se o OpenAI pedir senha, ou botão de enviar código temporário
-                    _log.info("[6/8] Procurando botão 'Send code' / 'Email a code'...")
+                    # Se o OpenAI pedir botão de enviar código temporário (PT e EN)
+                    _log.info("[6/8] Procurando botão de enviar código...")
                     send_code_btn = await page.query_selector(
                         'button:has-text("Send code"), button:has-text("Send temporary code"), '
-                        'button:has-text("Email a code"), button:has-text("Enviar código"), '
-                        'button:has-text("Email temporary code"), button:has-text("Continue with login code"), '
-                        'button:has-text("Send me a code"), a:has-text("Send temporary code")'
+                        'button:has-text("Email a code"), button:has-text("Email temporary code"), '
+                        'button:has-text("Continue with login code"), button:has-text("Send me a code"), '
+                        'button:has-text("Enviar código"), button:has-text("Enviar código de uso único"), '
+                        'button:has-text("código de uso único"), button:has-text("Enviar e-mail"), '
+                        'button:has-text("código temporário"), '
+                        'a:has-text("Send temporary code"), a:has-text("Enviar código"), '
+                        'a:has-text("código de uso único")'
                     )
                     if send_code_btn and await send_code_btn.is_visible():
                         await send_code_btn.click()
@@ -255,7 +288,11 @@ async def start_login(email: str = "", force: bool = False) -> dict[str, Any]:
                     needs_code = any(w in page_text.lower() for w in [
                         "verify", "verificar", "código", "code", "enter the code",
                         "check your email", "confirme", "autenticação", "otp",
-                        "6-digit", "sent you", "enviamos", "check your inbox", "sign in with a temporary code"
+                        "6-digit", "sent you", "enviamos", "check your inbox",
+                        "sign in with a temporary code", "confira sua caixa",
+                        "caixa de entrada", "código de verificação",
+                        "código temporário", "uso único",
+                        "we sent", "enter code", "reenviar"
                     ])
 
                     _log.info("[7/8] needs_code=%s, url=%s", needs_code, page.url)
