@@ -261,16 +261,21 @@ async def start_login(email: str = "", force: bool = False) -> dict[str, Any]:
                     _log.info("[5/8] page_text pós-continue (300 chars): %s", (await page.inner_text("body"))[:300].replace('\n', ' '))
 
                     # Se o OpenAI pedir botão de enviar código temporário (PT e EN)
-                    _log.info("[6/8] Procurando botão de enviar código (com retry 15s)...")
+                    # Ou se cair na tela de senha com opção "Log in with a one-time code"
+                    _log.info("[6/8] Procurando botão de enviar código / one-time code (com retry 15s)...")
                     send_code_selectors = (
+                        'button:has-text("Log in with a one-time code"), '
+                        'a:has-text("Log in with a one-time code"), '
+                        'button:has-text("one-time code"), a:has-text("one-time code"), '
+                        'button:has-text("Entrar com código de uso único"), '
+                        'a:has-text("Entrar com código de uso único"), '
+                        'button:has-text("código de uso único"), a:has-text("código de uso único"), '
                         'button:has-text("Send code"), button:has-text("Send temporary code"), '
                         'button:has-text("Email a code"), button:has-text("Email temporary code"), '
                         'button:has-text("Continue with login code"), button:has-text("Send me a code"), '
                         'button:has-text("Enviar código"), button:has-text("Enviar código de uso único"), '
-                        'button:has-text("código de uso único"), button:has-text("Enviar e-mail"), '
-                        'button:has-text("código temporário"), '
-                        'a:has-text("Send temporary code"), a:has-text("Enviar código"), '
-                        'a:has-text("código de uso único")'
+                        'button:has-text("Enviar e-mail"), button:has-text("código temporário"), '
+                        'a:has-text("Send temporary code"), a:has-text("Enviar código")'
                     )
                     send_code_btn = None
                     try:
