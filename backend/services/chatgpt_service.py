@@ -49,6 +49,7 @@ def _chromium_launch_kwargs() -> dict:
 # Estado global do login (login interativo via endpoint /login/*)
 _login_state: dict[str, Any] = {"status": "idle", "page": None, "browser": None, "context": None}
 _login_lock = asyncio.Lock()
+_login_timeout_seconds = 120  # Timeout máximo para operação de login
 
 
 class ChatGPTError(RuntimeError):
@@ -112,101 +113,124 @@ async def start_login(email: str = "", force: bool = False) -> dict[str, Any]:
     if not target_email:
         return {"status": "error", "message": "Informe o e-mail para realizar o login no ChatGPT."}
 
-    async with _login_lock:
-        # Fechar qualquer browser ou página anterior para garantir envio de um NOVO código OTP
-        if _login_state.get("browser"):
-            try:
+    # Se login anterior travou ou está em estado inválido, limpar agressivamente
+    if _login_state.get("status") in ("logging_in", "waiting_code") and force:
+        try:
+            if _login_state.get("browser"):
                 await _login_state["browser"].close()
-            except Exception:
-                pass
-            _login_state.update({"status": "idle", "page": None, "browser": None, "context": None})
+        except Exception:
+            pass
+        _login_state.update({"status": "idle", "page": None, "browser": None, "context": None})
 
+    try:
+        async with asyncio.timeout(_login_timeout_seconds):
+            async with _login_lock:
+                # Fechar qualquer browser ou página anterior para garantir envio de um NOVO código OTP
+                if _login_state.get("browser"):
+                    try:
+                        await _login_state["browser"].close()
+                    except Exception:
+                        pass
+                    _login_state.update({"status": "idle", "page": None, "browser": None, "context": None})
+
+                try:
+                    from playwright.async_api import async_playwright
+                except ImportError:
+                    raise ChatGPTError("Playwright não instalado no servidor.", status_code=503)
+
+                pw = await async_playwright().__aenter__()
+                browser = await pw.chromium.launch(**_chromium_launch_kwargs())
+                context = await browser.new_context()
+                page = await context.new_page()
+
+                _login_state.update({"status": "logging_in", "page": page, "browser": browser, "context": context, "pw": pw})
+
+                try:
+                    await page.goto("https://chatgpt.com/auth/login", wait_until="domcontentloaded", timeout=45000)
+                    await asyncio.sleep(4)
+
+                    # Clicar em "Log in" se a landing page tiver o botão
+                    login_btn = await page.query_selector('button:has-text("Log in"), a:has-text("Log in"), [data-testid="login-button"], a[href*="login"]')
+                    if login_btn and await login_btn.is_visible():
+                        await login_btn.click()
+                        await asyncio.sleep(3)
+
+                    # Preencher e-mail com múltiplos seletores
+                    email_input = await _wait_for(
+                        lambda: page.query_selector(
+                            'input[type="email"], input[name="email"], input[autocomplete="email"], '
+                            'input[autocomplete="username"], input[id*="email"], input[placeholder*="email"]'
+                        ),
+                        timeout_ms=25000, message="Campo de e-mail do ChatGPT não encontrado."
+                    )
+                    await email_input.fill(target_email)
+                    await asyncio.sleep(0.5)
+
+                    continue_btn = await page.query_selector('button[type="submit"], button:has-text("Continue"), button:has-text("Continuar")')
+                    if continue_btn and await continue_btn.is_visible():
+                        await continue_btn.click()
+                    else:
+                        await page.keyboard.press("Enter")
+                    await asyncio.sleep(4)
+
+                    # Se o OpenAI pedir senha, ou botão de enviar código temporário
+                    send_code_btn = await page.query_selector(
+                        'button:has-text("Send code"), button:has-text("Send temporary code"), '
+                        'button:has-text("Email a code"), button:has-text("Enviar código"), '
+                        'button:has-text("Email temporary code"), button:has-text("Continue with login code"), '
+                        'button:has-text("Send me a code"), a:has-text("Send temporary code")'
+                    )
+                    if send_code_btn and await send_code_btn.is_visible():
+                        await send_code_btn.click()
+                        await asyncio.sleep(4)
+
+                    # Preencher senha se o campo for solicitado
+                    pass_input = await page.query_selector('input[type="password"]')
+                    if pass_input and await pass_input.is_visible() and CHATGPT_PASSWORD:
+                        await pass_input.fill(CHATGPT_PASSWORD)
+                        await page.keyboard.press("Enter")
+                        await asyncio.sleep(4)
+
+                    # Verificar se já caiu no prompt do código OTP
+                    page_text = await page.inner_text("body")
+                    needs_code = any(w in page_text.lower() for w in [
+                        "verify", "verificar", "código", "code", "enter the code",
+                        "check your email", "confirme", "autenticação", "otp",
+                        "6-digit", "sent you", "enviamos", "check your inbox", "sign in with a temporary code"
+                    ])
+
+                    if needs_code or "auth" in page.url or "login" in page.url:
+                        _login_state["status"] = "waiting_code"
+                        return {"status": "waiting_code", "message": f"Novo código OTP disparado para {target_email}! Verifique o e-mail."}
+
+                    if "chatgpt.com" in page.url and "auth" not in page.url:
+                        await _save_session(context)
+                        _login_state["status"] = "idle"
+                        return {"status": "ok", "message": "Login concluído com sucesso. Sessão salva."}
+
+                    _login_state["status"] = "waiting_code"
+                    return {"status": "waiting_code", "message": f"Código OTP disparado para {target_email}."}
+
+                except Exception as e:
+                    _login_state["status"] = "error"
+                    try:
+                        await browser.close()
+                    except Exception:
+                        pass
+                    _login_state.update({"page": None, "browser": None, "context": None})
+                    return {"status": "error", "message": f"Erro abrindo login no ChatGPT: {e}"}
+    except asyncio.TimeoutError:
+        _login_state["status"] = "idle"
         try:
-            from playwright.async_api import async_playwright
-        except ImportError:
-            raise ChatGPTError("Playwright não instalado no servidor.", status_code=503)
-
-        pw = await async_playwright().__aenter__()
-        browser = await pw.chromium.launch(**_chromium_launch_kwargs())
-        context = await browser.new_context()
-        page = await context.new_page()
-
-        _login_state.update({"status": "logging_in", "page": page, "browser": browser, "context": context, "pw": pw})
-
-        try:
-            await page.goto("https://chatgpt.com/auth/login", wait_until="domcontentloaded", timeout=45000)
-            await asyncio.sleep(4)
-
-            # Clicar em "Log in" se a landing page tiver o botão
-            login_btn = await page.query_selector('button:has-text("Log in"), a:has-text("Log in"), [data-testid="login-button"], a[href*="login"]')
-            if login_btn and await login_btn.is_visible():
-                await login_btn.click()
-                await asyncio.sleep(3)
-
-            # Preencher e-mail com múltiplos seletores
-            email_input = await _wait_for(
-                lambda: page.query_selector(
-                    'input[type="email"], input[name="email"], input[autocomplete="email"], '
-                    'input[autocomplete="username"], input[id*="email"], input[placeholder*="email"]'
-                ),
-                timeout_ms=25000, message="Campo de e-mail do ChatGPT não encontrado."
-            )
-            await email_input.fill(target_email)
-            await asyncio.sleep(0.5)
-
-            continue_btn = await page.query_selector('button[type="submit"], button:has-text("Continue"), button:has-text("Continuar")')
-            if continue_btn and await continue_btn.is_visible():
-                await continue_btn.click()
-            else:
-                await page.keyboard.press("Enter")
-            await asyncio.sleep(4)
-
-            # Se o OpenAI pedir senha, ou botão de enviar código temporário
-            send_code_btn = await page.query_selector(
-                'button:has-text("Send code"), button:has-text("Send temporary code"), '
-                'button:has-text("Email a code"), button:has-text("Enviar código"), '
-                'button:has-text("Email temporary code"), button:has-text("Continue with login code"), '
-                'button:has-text("Send me a code"), a:has-text("Send temporary code")'
-            )
-            if send_code_btn and await send_code_btn.is_visible():
-                await send_code_btn.click()
-                await asyncio.sleep(4)
-
-            # Preencher senha se o campo for solicitado
-            pass_input = await page.query_selector('input[type="password"]')
-            if pass_input and await pass_input.is_visible() and CHATGPT_PASSWORD:
-                await pass_input.fill(CHATGPT_PASSWORD)
-                await page.keyboard.press("Enter")
-                await asyncio.sleep(4)
-
-            # Verificar se já caiu no prompt do código OTP
-            page_text = await page.inner_text("body")
-            needs_code = any(w in page_text.lower() for w in [
-                "verify", "verificar", "código", "code", "enter the code",
-                "check your email", "confirme", "autenticação", "otp",
-                "6-digit", "sent you", "enviamos", "check your inbox", "sign in with a temporary code"
-            ])
-
-            if needs_code or "auth" in page.url or "login" in page.url:
-                _login_state["status"] = "waiting_code"
-                return {"status": "waiting_code", "message": f"Novo código OTP disparado para {target_email}! Verifique o e-mail."}
-
-            if "chatgpt.com" in page.url and "auth" not in page.url:
-                await _save_session(context)
-                _login_state["status"] = "idle"
-                return {"status": "ok", "message": "Login concluído com sucesso. Sessão salva."}
-
-            _login_state["status"] = "waiting_code"
-            return {"status": "waiting_code", "message": f"Código OTP disparado para {target_email}."}
-
-        except Exception as e:
-            _login_state["status"] = "error"
-            try:
-                await browser.close()
-            except Exception:
-                pass
-            _login_state.update({"page": None, "browser": None, "context": None})
-            return {"status": "error", "message": f"Erro abrindo login no ChatGPT: {e}"}
+            if _login_state.get("browser"):
+                await _login_state["browser"].close()
+        except Exception:
+            pass
+        _login_state.update({"page": None, "browser": None, "context": None})
+        return {
+            "status": "error",
+            "message": "Login anterior travou e foi resetado. Tente novamente em 5 segundos."
+        }
 
 
 async def submit_login_code(code: str) -> dict[str, Any]:

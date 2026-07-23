@@ -132,6 +132,27 @@ async def login_resend() -> dict[str, Any]:
     return result
 
 
+@app.post("/login/reset")
+async def login_reset() -> dict[str, Any]:
+    """Force reset do estado de login (uso emergencial)."""
+    import services.chatgpt_service as chatgpt_svc
+    try:
+        _login_state = chatgpt_svc._login_state
+        if _login_state.get("browser"):
+            try:
+                await _login_state["browser"].close()
+            except Exception:
+                pass
+        _login_state.update({"status": "idle", "page": None, "browser": None, "context": None})
+        return {
+            "ok": True,
+            "message": "Estado de login resetado. Você pode fazer login novamente.",
+            "time": now_iso()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao resetar login: {str(e)}")
+
+
 @app.get("/health")
 async def health() -> dict[str, Any]:
     material_status = MaterialApiClient().public_status()
