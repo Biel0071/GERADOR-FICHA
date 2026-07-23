@@ -4,8 +4,28 @@ import asyncio
 import json
 import os
 import re
+import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+
+
+@asynccontextmanager
+async def _async_timeout(seconds: float):
+    """Compatível com Python 3.9+ (asyncio.timeout só existe no 3.11+)."""
+    if sys.version_info >= (3, 11):
+        async with asyncio.timeout(seconds):
+            yield
+    else:
+        loop = asyncio.get_event_loop()
+        task = asyncio.current_task()
+        handle = loop.call_later(seconds, task.cancel)
+        try:
+            yield
+        except asyncio.CancelledError:
+            raise asyncio.TimeoutError()
+        finally:
+            handle.cancel()
 
 CHATGPT_PROJECT_URL = os.getenv(
     "CHATGPT_PROJECT_URL",
@@ -123,7 +143,7 @@ async def start_login(email: str = "", force: bool = False) -> dict[str, Any]:
         _login_state.update({"status": "idle", "page": None, "browser": None, "context": None})
 
     try:
-        async with asyncio.timeout(_login_timeout_seconds):
+        async with _async_timeout(_login_timeout_seconds):
             async with _login_lock:
                 # Fechar qualquer browser ou página anterior para garantir envio de um NOVO código OTP
                 if _login_state.get("browser"):
